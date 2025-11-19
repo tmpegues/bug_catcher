@@ -1,0 +1,13 @@
+<launch>
+    <arg name="demo" default="True" description="bool: true will launch the Franka demo.launch.py. False will open rviz, but not the demo"/>
+
+    <include file="$(find-pkg-share franka_fer_moveit_config)/launch/demo.launch.py" if="$(eval $(var demo)==True)"/>
+    <include file="$(find-pkg-share franka_fer_moveit_config)/launch/moveit_rviz.launch.py" if="$(eval $(var demo)==False)">
+        <arg  name ="robot_ip" value="panda0.robot"/>
+    </include>
+
+    <node pkg="bug_catcher" exec="pick_node">
+        <param name="filename" value="$(find-pkg-share bug_catcher)/config/objects.yaml"/>
+    </node>
+
+</launch>

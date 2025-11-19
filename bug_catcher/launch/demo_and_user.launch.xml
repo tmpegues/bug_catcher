@@ -1,0 +1,11 @@
+<launch>
+    <arg name='demo' default='True' description='bool: true will launch the Franka demo.launch.py. False will open rviz, but not the demo'/>
+    <arg name='testing' default='False' description='bool: true will turn on a few publishers to allow colcon test to check kinematic results'/>
+
+    <include file='$(find-pkg-share franka_fer_moveit_config)/launch/demo.launch.py' if='$(eval $(var demo)==True)'/>
+
+    <node pkg='bug_catcher' exec='usernode'>
+        <param name='testing' value='$(var testing)'/>
+    </node>
+
+</launch>
