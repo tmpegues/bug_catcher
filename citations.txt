@@ -1,0 +1,10 @@
+[1] A. DeBoer, private communication, Nov 2025.
+[2] ROS Docs. "Moveit_msgs - PlanningScene" docs.ros.org. Accessed: Nov. 10th, 2025. [Online]. Available: https://docs.ros.org/en/rolling/p/moveit_msgs/msg/PlanningScene.html
+[3] ROS Docs. "Moveit_msgs - CollisionObject" docs.ros.org. Accessed: Nov. 10th, 2025. [Online]. Available: https://docs.ros.org/en/rolling/p/moveit_msgs/msg/PlanningScene.html
+[4] ROS Docs. "Documenting A ROS 2 Package" docs.ros.org. Accessed: Nov. 12th, 2025. [Online]. Available: https://docs.ros.org/en/rolling/p/moveit_msgs/msg/PlanningScene.html
+[5] ChatGPT-5. OpenAI. Used On: 2025-11-09. Available: https://chatgpt.com/s/t_6916108497608191aef70322330d7b95
+[6] Anunth Ramaswami, Took advice on the use of ExecuteTrajectory for controlling the gripper in motionplanner.py
+[7] ChatGPT-5. OpenAI. Used On: 2025-11-12. Available: https://chatgpt.com/s/t_691612e0bac48191af95dc355f76ddaa
+[8] ChatGPT-5.1 OpenAI. Used On: 2025-11-13. Available: https://chatgpt.com/share/691774aa-7754-8006-a24b-90e5967aa649
+[9] Stack Overflow. "Call async function from sync function, while the synchronous function continues : Python" stackoverflow.com. Accessed: Nov. 17th, 2025. [Online]. Available: https://stackoverflow.com/questions/55647753/call-async-function-from-sync-function-while-the-synchronous-function-continues
+[10] R. Zhu, private communication, Nov 2025.
