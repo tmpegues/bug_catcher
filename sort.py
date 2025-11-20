@@ -129,7 +129,7 @@ def convert_x_to_bbox(x: np.ndarray, score: float | None = None) -> np.ndarray:
     np.ndarray
         Bbox [x1, y1, x2, y2] or [x1, y1, x2, y2, score].
     """
-    w = np.sqrt(x[2] * x[3])
+    w = np.sqrt(max(x[2] * x[3], 1e-6))
     h = x[2] / w
     x1 = x[0] - (w / 2.0)
     y1 = x[1] - (h / 2.0)
