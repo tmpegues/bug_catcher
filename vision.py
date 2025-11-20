@@ -75,15 +75,36 @@ class Vision:
     def add_contour(self,mask=None):
         # Morphological closing (fills small gaps inside the pen mask)
         kernel = np.ones((3,3), np.uint8)
-        mask_closed = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        mask_closed = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)        
+        mask_cleaned = cv2.morphologyEx(mask_closed, cv2.MORPH_OPEN, kernel)
         #cv2.imshow("Closed Mask", mask_closed)
-        contours, hierarchy = cv2.findContours(mask_closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, hierarchy = cv2.findContours(mask_cleaned, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         return contours, hierarchy
         
-    def draw_bounding_box(self, contours,frame):
+    def draw_bounding_box(self, contours, frame):
         if contours is None or len(contours) == 0:
-            return np.empty((0,5))  # no contours found        
-        # Use largest contour
+            return np.empty((0,5))  # no contours found   
+        area = 100
+        detections = []
+        for contour in contours:
+            contour_area = cv2.contourArea(contour)
+            if contour_area<area:
+                continue     
+
+            if len(contour) <5:
+                continue
+
+            x, y, w, h = cv2.boundingRect(contour) 
+
+            if w < 5 or h <5:
+                continue
+
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 0, 255), -1)
+            detections.append([x, y, x + w, y + h, 1.0])
+
+            
+
+        """# Use largest contour
         largest_contour = max(contours, key=cv2.contourArea)
 
         # fitRectangle needs at least 4 points
@@ -92,9 +113,11 @@ class Vision:
 
         x, y, w, h = cv2.boundingRect(largest_contour) 
         if w == 0 or h == 0:
-            return np.empty((0, 5))
-        cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 0, 255), -1)
-        return np.array([[x, y, x + w, y + h, 1.0]], dtype=float)
+            return np.empty((0, 5))"""
+        if len(detections)>0:
+            return np.array(detections, dtype=float)
+        else:
+            return np.empty((0,5))
     
     def track_results(self, tracked, frame):
         for x1, y1, x2, y2, track_id in tracked:
