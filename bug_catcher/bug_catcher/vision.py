@@ -40,9 +40,11 @@ class Vision:
 
         self.max_value = 255
         self.max_value_H = 360 // 2
+        self.max_blur = 100
         self.low_H = 0
         self.low_S = 0
         self.low_V = 0
+        self.blur = 1
         self.high_H = self.max_value_H
         self.high_S = self.max_value
         self.high_V = self.max_value
@@ -52,6 +54,7 @@ class Vision:
         self.high_H_name = 'High H'
         self.high_S_name = 'High S'
         self.high_V_name = 'High V'
+        self.blur_name = 'Blur'
 
         self.tracker = Sort(max_age=15, min_hits=2, iou_threshold=0.0)
         self.detections = []
@@ -104,6 +107,14 @@ class Vision:
             self.on_high_V_thresh_trackbar,
         )
 
+        cv2.createTrackbar(
+            self.blur_name,
+            self.window_name,
+            self.blur,
+            self.max_blur,
+            self.blur_trackbar,
+        )
+
     def on_low_H_thresh_trackbar(self, val):
         """Update the lower Hue threshold from the trackbar."""
         self.low_H = val
@@ -139,6 +150,13 @@ class Vision:
         self.high_V = val
         self.high_V = max(self.high_V, self.low_V + 1)
         cv2.setTrackbarPos(self.high_V_name, self.window_name, self.high_V)
+
+    def blur_trackbar(self, val):
+        """Update the blur from the trackbar."""
+        self.blur = val * 2 + 1
+        if self.blur < 1:
+            self.blur = 1
+        cv2.setTrackbarPos(self.blur_name, self.window_name, val)
 
     def add_contour(self, mask=None):
         """
@@ -251,7 +269,8 @@ class Vision:
             if not ret:
                 break
 
-            frame_HSV = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+            frame_blur = cv2.GaussianBlur(frame, (self.blur, self.blur), 0)
+            frame_HSV = cv2.cvtColor(frame_blur, cv2.COLOR_BGR2HSV)
             frame_threshold = cv2.inRange(
                 frame_HSV,
                 (self.low_H, self.low_S, self.low_V),
@@ -270,7 +289,7 @@ class Vision:
 
             self.track_results(tracked, only_rgb)
 
-            cv2.imshow(self.window_name, frame)
+            cv2.imshow(self.window_name, frame_blur)
             cv2.imshow(self.window_mask_name, frame_threshold)
             cv2.imshow(self.window_only_rgb, only_rgb)
 
