@@ -15,8 +15,8 @@ from os import path
 import xml.etree.ElementTree as ET
 
 from ament_index_python.packages import get_package_share_directory
-from builtin_interfaces.msg import Duration
 from bug_catcher.robotstate import RobotState
+from builtin_interfaces.msg import Duration
 from geometry_msgs.msg import Point, Pose, Quaternion
 from moveit_msgs.action import ExecuteTrajectory, MoveGroup
 from moveit_msgs.msg import (

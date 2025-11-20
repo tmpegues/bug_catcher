@@ -96,11 +96,11 @@ class BugMover:
         """
         Pick up the bug by moving to a bridge position and then closing the gripper.
 
-        Args:
+        Args
         ----
         bridge_end_position (Point): The coordinate where the bridge ends (drop-off point).
 
-        Returns:
+        Returns
         -------
         success (bool): True if the robot gripper thinks it picked up an object.
 
