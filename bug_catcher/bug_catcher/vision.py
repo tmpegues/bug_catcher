@@ -100,20 +100,9 @@ class Vision:
                 continue
 
             cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 0, 255), -1)
-            detections.append([x, y, x + w, y + h, 1.0])
+            detections.append([x, y, x + w, y + h, 1.0])           
 
-            
-
-        """# Use largest contour
-        largest_contour = max(contours, key=cv2.contourArea)
-
-        # fitRectangle needs at least 4 points
-        if len(largest_contour) < 4:
-            return np.empty((0, 5))
-
-        x, y, w, h = cv2.boundingRect(largest_contour) 
-        if w == 0 or h == 0:
-            return np.empty((0, 5))"""
+       
         if len(detections)>0:
             return np.array(detections, dtype=float)
         else:
