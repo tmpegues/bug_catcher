@@ -10,7 +10,7 @@ class Color(Enum):
     """
     Color tracker for the bugs.
 
-    TODO: Is using a string fine?
+    TODO: Is using a string fine and enum is unnecessary here?
     """
 
     red = auto()
@@ -89,12 +89,13 @@ class Bug:
 
         """
         vel = TwistStamped()
+        vel.header = new_pose.header
         x = new_pose.pose.position.x - old_pose.pose.position.x
         y = new_pose.pose.position.y - old_pose.pose.position.y
         z = new_pose.pose.position.z - old_pose.pose.position.z
         vel.twist.linear.x, vel.twist.linear.y, vel.twist.linear.z = x, y, z
 
-        angles_old = [self._euler_from_quaternion(old_pose.pose.orientation)]
-        angles_new = [self._euler_from_quaternion(new_pose.pose.orientation)]
-
-        self.angle_diff = angles_new - angles_old
+        angles_old = self._euler_from_quaternion(old_pose.pose.orientation)
+        angles_new = self._euler_from_quaternion(new_pose.pose.orientation)
+        angle_diff = [new - old for new, old in zip(angles_new, angles_old)]
+        vel.twist.angular.x, vel.twist.angular.y, vel.twist.angular.z = angle_diff
