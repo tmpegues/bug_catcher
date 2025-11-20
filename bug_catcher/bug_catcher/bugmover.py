@@ -3,6 +3,7 @@
 import asyncio
 import math
 
+from bug_catcher import bug as bug
 from geometry_msgs.msg import Point, Pose, Quaternion
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
@@ -53,13 +54,17 @@ class BugMover:
     # -----------------------------------------------------------------
     # Public Functions
     # -----------------------------------------------------------------
-    async def tracking_pick(self) -> bool:
+    async def stalking_pick(self, bug: bug.Bug) -> bool:
         """
         Pick up the bug by tracking its current state (no anticipation).
 
         TODO: the pose needs to be allowed to be constantly updated. It should take a
         self.current_bug.pose or something like that that can be updated while the trajectory is
         executing and change the end point
+
+        Args:
+        ----
+        bug (bug.Bug): The bug to stalk and pick up
 
         Returns
         -------
@@ -164,4 +169,19 @@ class BugMover:
         await self.node.mpi.CloseGripper()
         self.logger.info('Ambush sequence complete.')
 
+        return True
+
+    async def interdicting_pick(self, bug: bug.Bug) -> bool:
+        """
+        Pick up the bug by anticipating its future state.
+
+        Args:
+        ----
+        bug (bug.Bug): The bug to stalk and pick up
+
+        Returns
+        -------
+        success (bool): True if the robot gripper thinks it picked up an object
+
+        """
         return True
