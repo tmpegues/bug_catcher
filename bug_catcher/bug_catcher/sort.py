@@ -162,7 +162,7 @@ class KalmanBoxTracker:
         """
         Initialise a tracker using an initial bounding box.
 
-        Args
+        Args:
         ----
         bbox : np.ndarray
             Bounding box [x1, y1, x2, y2].
@@ -230,7 +230,7 @@ class KalmanBoxTracker:
         """
         Update the state vector with an observed bounding box.
 
-        Args
+        Args:
         ----
         bbox : np.ndarray
             Observed bounding box [x1, y1, x2, y2].
@@ -370,7 +370,7 @@ class Sort:
         """
         Set key parameters for SORT.
 
-        Args
+        Args:
         ----
         max_age : int
             Maximum number of frames to keep a track alive without
