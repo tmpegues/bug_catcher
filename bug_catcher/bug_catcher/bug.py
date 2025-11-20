@@ -2,8 +2,8 @@
 
 from enum import auto, Enum
 
-import numpy as np
 from geometry_msgs.msg import PoseStamped, TwistStamped
+import numpy as np
 
 
 class Color(Enum):
@@ -20,18 +20,18 @@ class Color(Enum):
 class Bug:
     """A class to represent a single HexBug."""
 
-    def __init__(self, id: int, pose: PoseStamped, color: Color):
+    def __init__(self, ID: int, pose: PoseStamped, color: Color):
         """
         Initialize the Bug.
 
         Args:
         ----
-        id (int): a unique id for each bug
+        ID (int): a unique id for each bug
         pose (PoseStamped): the pose of the bug at the time of the camera frame
         color (Color): the color of the bug
 
         """
-        self.id = id
+        self.ID = ID
         self.pose = pose
         self.color = color
 
