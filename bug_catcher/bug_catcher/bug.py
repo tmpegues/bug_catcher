@@ -2,7 +2,7 @@
 
 from enum import auto, Enum
 
-from geometry_msgs.msg import PoseStamped, TwistStamped
+from geometry_msgs.msg import PoseStamped, TwistStamped, Vector3
 import numpy as np
 
 
@@ -88,14 +88,25 @@ class Bug:
         old_pose (PoseStamped): the old pose of the bug
 
         """
-        vel = TwistStamped()
-        vel.header = new_pose.header
-        x = new_pose.pose.position.x - old_pose.pose.position.x
-        y = new_pose.pose.position.y - old_pose.pose.position.y
-        z = new_pose.pose.position.z - old_pose.pose.position.z
-        vel.twist.linear.x, vel.twist.linear.y, vel.twist.linear.z = x, y, z
+        vel = TwistStamped(header=new_pose.header)
+
+        t0 = old_pose.header.stamp.sec + old_pose.header.stamp.nanosec
+        tf = new_pose.header.stamp.sec + new_pose.header.stamp.nanosec
+        t = float(tf - t0)
+
+        x = (new_pose.pose.position.x - old_pose.pose.position.x) / t
+        y = (new_pose.pose.position.y - old_pose.pose.position.y) / t
+        z = (new_pose.pose.position.z - old_pose.pose.position.z) / t
+        linear_vel = Vector3(x=x, y=y, z=z)  # linear velocity in m/s
 
         angles_old = self._euler_from_quaternion(old_pose.pose.orientation)
         angles_new = self._euler_from_quaternion(new_pose.pose.orientation)
-        angle_diff = [new - old for new, old in zip(angles_new, angles_old)]
-        vel.twist.angular.x, vel.twist.angular.y, vel.twist.angular.z = angle_diff
+        angular_disp = [new - old for new, old in zip(angles_new, angles_old)]
+        # above is angular displacement in radians
+
+        vel.twist.linear = linear_vel
+        vel.twist.angular.x, vel.twist.angular.y, vel.twist.angular.z = [
+            x / t for x in angular_disp
+        ]
+
+        self.vel = vel
