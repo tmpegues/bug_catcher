@@ -1,20 +1,22 @@
 """
-    SORT: A Simple, Online and Realtime Tracker
-    Copyright (C) 2016-2020 Alex Bewley alex@bewley.ai
+SORT: A Simple, Online and Realtime Tracker.
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+Copyright (C) 2016-2020 Alex Bewley <alex@bewley.ai>
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program. If not, see <http://www.gnu.org/licenses/>.
 """
+
 from __future__ import print_function
 
 import argparse
@@ -23,37 +25,34 @@ import os
 import time
 
 import cv2
+
 import matplotlib
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
+
 import numpy as np
+
+from scipy.optimize import linear_sum_assignment
+
 from skimage import io
 
-matplotlib.use("TkAgg")
+matplotlib.use('TkAgg')
 
 np.random.seed(0)
 
 
 def linear_assignment(cost_matrix: np.ndarray) -> np.ndarray:
     """Solve linear assignment for the given cost matrix."""
-    try:
-        import lap
-
-        _, x, y = lap.lapjv(cost_matrix, extend_cost=True)
-        return np.array([[y[i], i] for i in x if i >= 0])
-    except ImportError:
-        from scipy.optimize import linear_sum_assignment
-
-        x, y = linear_sum_assignment(cost_matrix)
-        return np.array(list(zip(x, y)))
+    x, y = linear_sum_assignment(cost_matrix)
+    return np.array(list(zip(x, y)))
 
 
 def iou_batch(bb_test: np.ndarray, bb_gt: np.ndarray) -> np.ndarray:
     """
-    Computes IOU between two sets of bboxes in the form [x1, y1, x2, y2].
+    Compute IOU between two sets of bboxes in the form [x1, y1, x2, y2].
 
-    Parameters
-    ----------
+    Args
+    ----
     bb_test : np.ndarray
         Bounding boxes to test (N x 4).
     bb_gt : np.ndarray
@@ -63,6 +62,7 @@ def iou_batch(bb_test: np.ndarray, bb_gt: np.ndarray) -> np.ndarray:
     -------
     np.ndarray
         IOU matrix of shape (N, M).
+
     """
     bb_gt = np.expand_dims(bb_gt, 0)
     bb_test = np.expand_dims(bb_test, 1)
@@ -77,10 +77,8 @@ def iou_batch(bb_test: np.ndarray, bb_gt: np.ndarray) -> np.ndarray:
     wh = w * h
 
     denom = (
-        (bb_test[..., 2] - bb_test[..., 0])
-        * (bb_test[..., 3] - bb_test[..., 1])
-        + (bb_gt[..., 2] - bb_gt[..., 0])
-        * (bb_gt[..., 3] - bb_gt[..., 1])
+        (bb_test[..., 2] - bb_test[..., 0]) * (bb_test[..., 3] - bb_test[..., 1])
+        + (bb_gt[..., 2] - bb_gt[..., 0]) * (bb_gt[..., 3] - bb_gt[..., 1])
         - wh
     )
 
@@ -91,8 +89,8 @@ def convert_bbox_to_z(bbox: np.ndarray) -> np.ndarray:
     """
     Convert bbox from [x1, y1, x2, y2] to [x, y, s, r].
 
-    Parameters
-    ----------
+    Args
+    ----
     bbox : np.ndarray
         Bounding box [x1, y1, x2, y2].
 
@@ -103,6 +101,7 @@ def convert_bbox_to_z(bbox: np.ndarray) -> np.ndarray:
         x, y : box center
         s    : scale (area)
         r    : aspect ratio (w / h)
+
     """
     w = bbox[2] - bbox[0]
     h = bbox[3] - bbox[1]
@@ -117,8 +116,8 @@ def convert_x_to_bbox(x: np.ndarray, score: float | None = None) -> np.ndarray:
     """
     Convert state vector [x, y, s, r] to bbox [x1, y1, x2, y2].
 
-    Parameters
-    ----------
+    Args
+    ----
     x : np.ndarray
         State vector [x, y, s, r]^T (4x1 or length-4 array).
     score : float, optional
@@ -128,6 +127,7 @@ def convert_x_to_bbox(x: np.ndarray, score: float | None = None) -> np.ndarray:
     -------
     np.ndarray
         Bbox [x1, y1, x2, y2] or [x1, y1, x2, y2, score].
+
     """
     w = np.sqrt(max(x[2] * x[3], 1e-6))
     h = x[2] / w
@@ -162,10 +162,11 @@ class KalmanBoxTracker:
         """
         Initialise a tracker using an initial bounding box.
 
-        Parameters
-        ----------
+        Args
+        ----
         bbox : np.ndarray
             Bounding box [x1, y1, x2, y2].
+
         """
         # 7D state: [x, y, s, r, vx, vy, vs]
         # 4D measurement: [x, y, s, r]
@@ -211,7 +212,9 @@ class KalmanBoxTracker:
         self.kf.errorCovPost *= 10.0
 
         # Initial state x from bbox
-        initial_state = convert_bbox_to_z(bbox).reshape(4,)
+        initial_state = convert_bbox_to_z(bbox).reshape(
+            4,
+        )
         self.kf.statePost[:4, 0] = initial_state
 
         self.time_since_update = 0
@@ -227,10 +230,11 @@ class KalmanBoxTracker:
         """
         Update the state vector with an observed bounding box.
 
-        Parameters
-        ----------
+        Args
+        ----
         bbox : np.ndarray
             Observed bounding box [x1, y1, x2, y2].
+
         """
         self.time_since_update = 0
         self.history.clear()
@@ -248,6 +252,7 @@ class KalmanBoxTracker:
         -------
         np.ndarray
             Predicted bbox [x1, y1, x2, y2] as a (1, 4) array.
+
         """
         # Prevent scale from becoming negative
         if (self.kf.statePost[6] + self.kf.statePost[2]) <= 0:
@@ -272,6 +277,7 @@ class KalmanBoxTracker:
         -------
         np.ndarray
             Current bbox [x1, y1, x2, y2] as a (1, 4) array.
+
         """
         return convert_x_to_bbox(self.kf.statePost)
 
@@ -284,8 +290,8 @@ def associate_detections_to_trackers(
     """
     Assign detections to tracked objects (both as bboxes).
 
-    Parameters
-    ----------
+    Args
+    ----
     detections : np.ndarray
         Detections [[x1, y1, x2, y2, score], ...].
     trackers : np.ndarray
@@ -301,6 +307,7 @@ def associate_detections_to_trackers(
         Indices of detections with no match.
     unmatched_trackers : np.ndarray
         Indices of trackers with no match.
+
     """
     if len(trackers) == 0:
         return (
@@ -352,9 +359,7 @@ def associate_detections_to_trackers(
 
 
 class Sort:
-    """
-    SORT tracker: Simple Online and Realtime Tracking.
-    """
+    """SORT tracker: Simple Online and Realtime Tracking."""
 
     def __init__(
         self,
@@ -365,8 +370,8 @@ class Sort:
         """
         Set key parameters for SORT.
 
-        Parameters
-        ----------
+        Args
+        ----
         max_age : int
             Maximum number of frames to keep a track alive without
             associated detections.
@@ -375,6 +380,7 @@ class Sort:
             initialised.
         iou_threshold : float
             Minimum IOU for a valid match.
+
         """
         self.max_age = max_age
         self.min_hits = min_hits
@@ -386,8 +392,8 @@ class Sort:
         """
         Update tracker with newly detected bounding boxes.
 
-        Parameters
-        ----------
+        Args
+        ----
         dets : np.ndarray, optional
             Detections [[x1, y1, x2, y2, score], ...]. Use
             np.empty((0, 5)) when there are no detections.
@@ -396,6 +402,7 @@ class Sort:
         -------
         np.ndarray
             Array [[x1, y1, x2, y2, id], ...] of active tracks.
+
         """
         if dets is None:
             dets = np.empty((0, 5))
@@ -439,12 +446,8 @@ class Sort:
         i = len(self.trackers)
         for trk in reversed(self.trackers):
             d = trk.get_state()[0]
-            if (
-                trk.time_since_update < 1
-                and (
-                    trk.hit_streak >= self.min_hits
-                    or self.frame_count <= self.min_hits
-                )
+            if trk.time_since_update < 1 and (
+                trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits
             ):
                 # +1 as MOT benchmark requires positive IDs
                 track_row = np.concatenate(
@@ -465,53 +468,47 @@ class Sort:
 
 def parse_args() -> argparse.Namespace:
     """Parse input arguments for the standalone SORT demo."""
-    parser = argparse.ArgumentParser(description="SORT demo")
+    parser = argparse.ArgumentParser(description='SORT demo')
     parser.add_argument(
-        "--display",
-        dest="display",
-        help="Display online tracker output (slow) [False]",
-        action="store_true",
+        '--display',
+        dest='display',
+        help='Display online tracker output (slow) [False]',
+        action='store_true',
     )
     parser.add_argument(
-        "--seq_path",
-        help="Path to detections.",
+        '--seq_path',
+        help='Path to detections.',
         type=str,
-        default="data",
+        default='data',
     )
     parser.add_argument(
-        "--phase",
-        help="Subdirectory in seq_path.",
+        '--phase',
+        help='Subdirectory in seq_path.',
         type=str,
-        default="train",
+        default='train',
     )
     parser.add_argument(
-        "--max_age",
-        help=(
-            "Maximum number of frames to keep alive a track without "
-            "associated detections."
-        ),
+        '--max_age',
+        help=('Maximum number of frames to keep alive a track without associated detections.'),
         type=int,
         default=1,
     )
     parser.add_argument(
-        "--min_hits",
-        help=(
-            "Minimum number of associated detections before track is "
-            "initialised."
-        ),
+        '--min_hits',
+        help=('Minimum number of associated detections before track is initialised.'),
         type=int,
         default=3,
     )
     parser.add_argument(
-        "--iou_threshold",
-        help="Minimum IOU for match.",
+        '--iou_threshold',
+        help='Minimum IOU for match.',
         type=float,
         default=0.3,
     )
     return parser.parse_args()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     args = parse_args()
     display = args.display
     phase = args.phase
@@ -521,25 +518,25 @@ if __name__ == "__main__":
     colours = np.random.rand(32, 3)
 
     if display:
-        if not os.path.exists("mot_benchmark"):
+        if not os.path.exists('mot_benchmark'):
             print(
-                "\n\tERROR: mot_benchmark link not found!\n\n"
-                "    Create a symbolic link to the MOT benchmark\n"
-                "    (https://motchallenge.net/data/2D_MOT_2015/#download). "
-                "E.g.:\n\n"
-                "    $ ln -s /path/to/MOT2015_challenge/2DMOT2015 "
-                "mot_benchmark\n\n",
+                '\n\tERROR: mot_benchmark link not found!\n\n'
+                '    Create a symbolic link to the MOT benchmark\n'
+                '    (https://motchallenge.net/data/2D_MOT_2015/#download). '
+                'E.g.:\n\n'
+                '    $ ln -s /path/to/MOT2015_challenge/2DMOT2015 '
+                'mot_benchmark\n\n',
             )
             raise SystemExit(1)
 
         plt.ion()
         fig = plt.figure()
-        ax1 = fig.add_subplot(111, aspect="equal")
+        ax1 = fig.add_subplot(111, aspect='equal')
 
-    if not os.path.exists("output"):
-        os.makedirs("output")
+    if not os.path.exists('output'):
+        os.makedirs('output')
 
-    pattern = os.path.join(args.seq_path, phase, "*", "det", "det.txt")
+    pattern = os.path.join(args.seq_path, phase, '*', 'det', 'det.txt')
 
     for seq_dets_fn in glob.glob(pattern):
         mot_tracker = Sort(
@@ -548,12 +545,12 @@ if __name__ == "__main__":
             iou_threshold=args.iou_threshold,
         )
 
-        seq_dets = np.loadtxt(seq_dets_fn, delimiter=",")
-        seq = seq_dets_fn[pattern.find("*"):].split(os.path.sep)[0]
+        seq_dets = np.loadtxt(seq_dets_fn, delimiter=',')
+        seq = seq_dets_fn[pattern.find('*') :].split(os.path.sep)[0]
 
-        out_path = os.path.join("output", f"{seq}.txt")
-        with open(out_path, "w", encoding="utf-8") as out_file:
-            print(f"Processing {seq}.")
+        out_path = os.path.join('output', f'{seq}.txt')
+        with open(out_path, 'w', encoding='utf-8') as out_file:
+            print(f'Processing {seq}.')
             max_frame = int(seq_dets[:, 0].max())
 
             for frame in range(max_frame):
@@ -567,15 +564,15 @@ if __name__ == "__main__":
 
                 if display:
                     img_path = os.path.join(
-                        "mot_benchmark",
+                        'mot_benchmark',
                         phase,
                         seq,
-                        "img1",
-                        f"{frame:06d}.jpg",
+                        'img1',
+                        f'{frame:06d}.jpg',
                     )
                     im = io.imread(img_path)
                     ax1.imshow(im)
-                    plt.title(f"{seq} Tracked Targets")
+                    plt.title(f'{seq} Tracked Targets')
 
                 start_time = time.time()
                 trackers = mot_tracker.update(dets)
@@ -584,7 +581,7 @@ if __name__ == "__main__":
 
                 for d in trackers:
                     print(
-                        "{:d},{:d},{:.2f},{:.2f},{:.2f},{:.2f},1,-1,-1,-1".format(
+                        '{:d},{:d},{:.2f},{:.2f},{:.2f},{:.2f},1,-1,-1,-1'.format(
                             frame,
                             int(d[4]),
                             d[0],
@@ -618,12 +615,12 @@ if __name__ == "__main__":
         fps = 0.0
 
     print(
-        "Total Tracking took: {:.3f} seconds for {} frames "
-        "or {:.1f} FPS".format(total_time, total_frames, fps),
+        'Total Tracking took: {:.3f} seconds for {} frames or {:.1f} FPS'.format(
+            total_time, total_frames, fps
+        ),
     )
 
     if display:
         print(
-            "Note: to get real runtime results run without the "
-            "option: --display",
+            'Note: to get real runtime results run without the option: --display',
         )
