@@ -229,14 +229,16 @@ class Vision:
         """
         Draw tracking results on the frame.
 
-        Args:
-            tracked : (np.ndarray)
-                Array of tracked bounding boxes with IDs.
-            frame : (np.ndarray)
-                Frame on which tracking results will be drawn.
+        Args
+        ----
+        tracked : (np.ndarray)
+            Array of tracked bounding boxes with IDs.
+        frame : (np.ndarray)
+            Frame on which tracking results will be drawn.
 
-        Returns:
-            np.ndarray: Frame with drawn bounding boxes, centers, and IDs.
+        Returns
+        -------
+        np.ndarray: Frame with drawn bounding boxes, centers, and IDs.
 
         """
         for x1, y1, x2, y2, track_id in tracked:
