@@ -171,6 +171,13 @@ class Vision:
         cv2.rectangle(frame_after_filter, (50, 50), (200, 200), YELLOW, 5)
         return frame_after_filter
 
+    def blur_trackbar(self, val):
+        """Update the blur from the trackbar."""
+        self.blur = val * 2 + 1
+        if self.blur < 1:
+            self.blur = 1
+        cv2.setTrackbarPos(self.blur_name, self.window_name, val)
+
     def add_contour(self, mask=None):
         """
         Clean the given mask and extract its external contours.
