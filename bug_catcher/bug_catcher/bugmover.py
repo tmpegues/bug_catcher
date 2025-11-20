@@ -3,12 +3,16 @@
 import asyncio
 
 from bug_catcher import bug as bug
+<<<<<<< HEAD
 from bug_catcher import mover_funcs as mv
 
 from geometry_msgs.msg import Pose
 
 import numpy as np
 
+=======
+from geometry_msgs.msg import Point, Pose, Quaternion
+>>>>>>> 9b78d5a (Adding skeleton of interdicting_pick function.)
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.node import Node
@@ -113,6 +117,10 @@ class BugMover:
         ----
         bug (bug.Bug): The bug to stalk and pick up
         wrist_cam (bool): True if a wrist camera is available and can be used for timing the grasp
+
+        Args:
+        ----
+        bug (bug.Bug): The bug to stalk and pick up
 
         Returns
         -------
@@ -324,4 +332,19 @@ class BugMover:
                     pass
                 # Once the while loop is exited, close immediately
                 self.node.mpi.GripBug()
+        return True
+
+    async def interdicting_pick(self, bug: bug.Bug) -> bool:
+        """
+        Pick up the bug by anticipating its future state.
+
+        Args:
+        ----
+        bug (bug.Bug): The bug to stalk and pick up
+
+        Returns
+        -------
+        success (bool): True if the robot gripper thinks it picked up an object
+
+        """
         return True
