@@ -8,3 +8,6 @@
 [8] ChatGPT-5.1 OpenAI. Used On: 2025-11-13. Available: https://chatgpt.com/share/691774aa-7754-8006-a24b-90e5967aa649
 [9] Stack Overflow. "Call async function from sync function, while the synchronous function continues : Python" stackoverflow.com. Accessed: Nov. 17th, 2025. [Online]. Available: https://stackoverflow.com/questions/55647753/call-async-function-from-sync-function-while-the-synchronous-function-continues
 [10] R. Zhu, private communication, Nov 2025.
+[11] Deepseek. Used on 2025-11-20 Available: https://chat.deepseek.com/share/x9hyc36pqwrws4n2qs "for character input in the run loop"
+[12] ChatGPT-5.1. OpenAI. Used On: 2025-11-19. Available: https://chatgpt.com/share/691fab74-8bc8-8006-9553-896d6eaa13c2 "modifying the kalman filter class to use opencv instead of filterpy"
+[13] ChatGPT-5.1. OpenAI Used On: 2025-11-19 Available: https://chatgpt.com/share/691fad01-daf0-8006-9a31-403f2cdcd291 "initial pipeline and drawing tracking results"

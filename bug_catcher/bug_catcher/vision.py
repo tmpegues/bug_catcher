@@ -60,7 +60,9 @@ class Vision:
         self.current_high_hsv = (180, 255, 255)
 
         # Tracker
+        # #################### Begin_Citation [13] ##################
         self.tracker = Sort(max_age=15, min_hits=2, iou_threshold=0.0)
+        # #################### End_Citation [13] ##################
         self.detections = []
 
     def blur_frame(self, frame):
@@ -176,7 +178,7 @@ class Vision:
 
             if len(contour) < 5:
                 continue
-
+            # #################### Begin_Citation [13] ##################
             x, y, w, h = cv2.boundingRect(contour)
 
             if w < 5 or h < 5:
@@ -224,6 +226,8 @@ class Vision:
                 (0, 255, 0),
                 2,
             )
+
+    # #################### End_Citation [13] ##################
 
     def run(self):
         """Run the main application loop."""
