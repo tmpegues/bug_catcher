@@ -121,6 +121,7 @@ class BugMover:
         Args:
         ----
         bug (bug.Bug): The bug to stalk and pick up
+        wrist_cam (bool): True if a wrist camera is available and can be used for timing the grasp
 
         Returns
         -------
@@ -334,17 +335,18 @@ class BugMover:
                 self.node.mpi.GripBug()
         return True
 
-    async def interdicting_pick(self, bug: bug.Bug) -> bool:
+    async def interdicting_pick(self, bug: bug.Bug, wrist_cam: bool = False) -> bool:
         """
         Pick up the bug by anticipating its future state.
 
         Args:
         ----
         bug (bug.Bug): The bug to stalk and pick up
+        wrist_cam (bool): True if a wrist camera is available and can be used for timing the grasp
 
         Returns
         -------
-        success (bool): True if the robot gripper thinks it picked up an object
+        success (bool): True if the robot gripper thinks it grasped an object
 
         """
         return True
