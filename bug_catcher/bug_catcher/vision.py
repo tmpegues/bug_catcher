@@ -33,7 +33,7 @@ class Vision:
 
         cv2.namedWindow(self.window_tracking)
 
-        # store current frame
+        # store current video frame
         self.current_frame = None
 
         # Blue
@@ -156,7 +156,7 @@ class Vision:
 
     def draw_bounding_box(self, contours, frame):
         """
-        Draw a bounding box around the given contour on the frame.
+        Draw a bounding box around the given contour on the video frame.
 
         Args
         ----
@@ -198,7 +198,7 @@ class Vision:
 
     def track_results(self, tracked, frame):
         """
-        Draw tracking results on the frame.
+        Draw tracking results on the video frame.
 
         Args
         ----
@@ -286,7 +286,7 @@ class Vision:
                 frame=frame_blur, low_hsv=self.current_low_hsv, high_hsv=self.current_high_hsv
             )
 
-            # bitwise mask on the blurred frame
+            # bitwise mask on the blurred video frame
             only_rgb = self.only_rgb(frame=frame_blur, mask=frame_threshold)
 
             # detecting contours
