@@ -148,6 +148,7 @@ def convert_x_to_bbox(x: np.ndarray, score: float | None = None) -> np.ndarray:
     ).reshape((1, 5))
 
 
+# #################### Begin_Citation [12] ##################
 class KalmanBoxTracker:
     """
     Internal state of an individual tracked object (single bbox).
@@ -280,6 +281,8 @@ class KalmanBoxTracker:
 
         """
         return convert_x_to_bbox(self.kf.statePost)
+
+    # #################### End_Citation [12] ##################
 
 
 def associate_detections_to_trackers(
