@@ -50,3 +50,21 @@ def test_vel_calculation():
 
     assert test_bug1.vel == twist_trans
     assert test_bug2.vel == twist_rot
+
+
+def test_future_pose():
+    """Check that the future pose calculation is being calculated correctly."""
+    # TMP TODO: Add in consideration or rotation
+    # Check a 0, 0, 0 to 1, 1, 1 movement in 1 second gives a 2, 2, 2 expected position
+    header_1s = Header()
+    header_1s.stamp.sec, header_1s.stamp.nanosec = 1, 0
+    pose_1trans = PoseStamped(header=header_1s, pose=Pose(position=Point(x=1.0, y=1.0, z=1.0)))
+
+    test_bug1 = bug.Bug(0, PoseStamped(), bug.Color.red)
+    test_bug1.update(pose_1trans)
+
+    future_pose = Pose(
+        position=Point(x=2.0, y=2.0, z=2.0), orientation=pose_1trans.pose.orientation
+    )
+
+    assert test_bug1.future_pose == future_pose

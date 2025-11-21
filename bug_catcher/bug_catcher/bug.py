@@ -2,7 +2,7 @@
 
 from enum import auto, Enum
 
-from geometry_msgs.msg import PoseStamped, TwistStamped, Vector3
+from geometry_msgs.msg import Point, Pose, PoseStamped, Quaternion, TwistStamped, Vector3
 import numpy as np
 
 
@@ -36,6 +36,7 @@ class Bug:
         self.color = color
 
         self.vel = TwistStamped()
+        self.future_pose = Pose()
 
     def update(self, new_pose: PoseStamped):
         """
@@ -50,19 +51,22 @@ class Bug:
         self.pose = new_pose
 
     # This conversion needs to be done because the twist.angular is euler and pose.orient is quat
-    def _euler_from_quaternion(self, quat):
+    def _euler_from_quaternion(self, quat: Quaternion | list):
         """
         Calculate Euler angles from a quaternion.
 
         Args:
         ----
-        quat (Quaternion): a quaternion to convert to Euler angles
+        quat (Quaternion | list): a quaternion to convert to Euler angles
 
         Returns
         -------
         rx, py, yz (floats): roll, pitch, yaw angles corresponding to quat
 
         """
+        if type(quat) is list:
+            quat = Quaternion(x=quat[0], y=quat[1], z=quat[2], w=quat[3])
+
         t0 = +2.0 * (quat.w * quat.x + quat.y * quat.z)
         t1 = +1.0 - 2.0 * (quat.x * quat.x + quat.y * quat.y)
         rx = np.arctan2(t0, t1)
@@ -80,7 +84,10 @@ class Bug:
 
     def _calc_vel(self, new_pose: PoseStamped, old_pose: PoseStamped):
         """
-        Calculate the velocity of the bug based on the last two camera frames.
+        Calculate the velocity and future pose of the bug based on the last two camera frames.
+
+        self.vel (TwistStamped) will be updated
+        self.future_pose (Pose) will be updated
 
         Args:
         ----
@@ -94,19 +101,37 @@ class Bug:
         tf = new_pose.header.stamp.sec + new_pose.header.stamp.nanosec
         t = float(tf - t0)
 
-        x = (new_pose.pose.position.x - old_pose.pose.position.x) / t
-        y = (new_pose.pose.position.y - old_pose.pose.position.y) / t
-        z = (new_pose.pose.position.z - old_pose.pose.position.z) / t
-        linear_vel = Vector3(x=x, y=y, z=z)  # linear velocity in m/s
+        # p for position. below is linear velocity in m/s
+        px = (new_pose.pose.position.x - old_pose.pose.position.x) / t
+        py = (new_pose.pose.position.y - old_pose.pose.position.y) / t
+        pz = (new_pose.pose.position.z - old_pose.pose.position.z) / t
+        lin_vel_list = [px, py, pz]
+        linear_vel = Vector3(x=px, y=py, z=pz)
 
+        # below is angular displacement (rpy) in radians
         angles_old = self._euler_from_quaternion(old_pose.pose.orientation)
         angles_new = self._euler_from_quaternion(new_pose.pose.orientation)
         angular_disp = [new - old for new, old in zip(angles_new, angles_old)]
-        # above is angular displacement in radians
+
+        # TMP TODO: Remove or fix the below
+        # # q is for quaternion. below is angular velocity in rad/sec
+        # qx = (new_pose.pose.orientation.x - old_pose.pose.orientation.x) / t
+        # qy = (new_pose.pose.orientation.y - old_pose.pose.orientation.y) / t
+        # qz = (new_pose.pose.orientation.z - old_pose.pose.orientation.z) / t
+        # qw = (new_pose.pose.orientation.w - old_pose.pose.orientation.w) / t
+        # eu_rot = self._euler_from_quaternion([qx, qy, qz, qw])
+        # angular_vel = Vector3(x=eu_rot[0], y=eu_rot[1], z=eu_rot[2])
+        # vel.twist.angular = angular_vel
 
         vel.twist.linear = linear_vel
         vel.twist.angular.x, vel.twist.angular.y, vel.twist.angular.z = [
             x / t for x in angular_disp
         ]
-
         self.vel = vel
+
+        # TMP TODO: add in consideration of angular
+        self.future_pose.orientation = new_pose.pose.orientation
+        fpx = new_pose.pose.position.x + lin_vel_list[0]
+        fpy = new_pose.pose.position.y + lin_vel_list[1]
+        fpz = new_pose.pose.position.z + lin_vel_list[2]
+        self.future_pose.position = Point(x=fpx, y=fpy, z=fpz)
