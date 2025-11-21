@@ -67,16 +67,17 @@ class Vision:
 
     def blur_frame(self, frame):
         """
-        Apply a blur filter on the frame.
+        Apply a blur filter on the video frame.
 
         Args
         ----
         frame : np.ndarray
+           Video frame on which the filter needs to be applied.
 
         Returns
         -------
         frame_blur : np.ndarray
-            Frame with the blur filter applied
+            Video frame with the blur filter applied.
 
         """
         frame_blur = cv2.GaussianBlur(frame, (self.blur, self.blur), 0)
@@ -84,12 +85,12 @@ class Vision:
 
     def color_filter(self, frame, low_hsv, high_hsv):
         """
-        Apply a color filter on the frame.
+        Apply a color filter on the video frame.
 
         Args
         ----
         frame : np.ndarray
-           Frame on which the filter needs to be applied.
+           Video frame on which the filter needs to be applied.
         low_hsv : tuple[int, int, int]
            Lower HSV value of the filter
         high_hsv : tuple[int, int, int]
@@ -98,7 +99,7 @@ class Vision:
         Returns
         -------
         frame_threshold : np.ndarray
-            Frame with the color filter applied
+            Video frame with the color filter applied
 
         """
         frame_HSV = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
@@ -107,22 +108,25 @@ class Vision:
 
     def only_rgb(self, frame, mask):
         """
-        Apply a bitwise mask to keep only the pixels within the selected color range.
+        Apply a mask on the video frame.
+
+        Apply a mask on the video frame to keep only the pixels within
+        the selected color range.
 
         Args
         ----
         frame : np.ndarray
-           Original frame
+           Video frame on which the  needs to be applied.
         mask : np.ndarray
-           A binary mask showing which pixels to keep.
+           A binary mask indicating which pixels to keep (non-zero) or hide (zero).
 
         Returns
         -------
         only_rgb : np.ndarray
-            Frame with only masked areas visible
+            Video frame with only un-masked areas visible.
 
         """
-        only_rgb = cv2.bitwise_and(frame, frame, mask)
+        only_rgb = cv2.bitwise_and(frame, frame, mask=mask)
         return only_rgb
 
     def add_contour(self, mask=None):
@@ -159,12 +163,12 @@ class Vision:
         contours : np.ndarray
             Contour for which the bounding box will be drawn.
         frame : np.ndarray
-            Image frame where the bounding box will be rendered.
+            Video frame where the bounding box will be rendered.
 
         Returns
         -------
         frame : np.ndarray
-            Frame with the drawn bounding box.
+            Video frame with the drawn bounding box.
 
         """
         if contours is None or len(contours) == 0:
@@ -201,11 +205,11 @@ class Vision:
         tracked : (np.ndarray)
             Array of tracked bounding boxes with IDs.
         frame : (np.ndarray)
-            Frame on which tracking results will be drawn.
+            Video frame on which tracking results will be drawn.
 
         Returns
         -------
-        np.ndarray: Frame with drawn bounding boxes, centers, and IDs.
+        None
 
         """
         for x1, y1, x2, y2, track_id in tracked:
