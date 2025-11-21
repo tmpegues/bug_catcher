@@ -106,12 +106,9 @@ class Vision:
         frame_threshold = cv2.inRange(frame_HSV, low_hsv, high_hsv)
         return frame_threshold
 
-    def only_rgb(self, frame, mask):
+    def apply_mask(self, frame, mask):
         """
         Apply a mask on the video frame.
-
-        Apply a mask on the video frame to keep only the pixels within
-        the selected color range.
 
         Args
         ----
@@ -126,8 +123,8 @@ class Vision:
             Video frame with only un-masked areas visible.
 
         """
-        only_rgb = cv2.bitwise_and(frame, frame, mask=mask)
-        return only_rgb
+        frame_after_mask = cv2.bitwise_and(frame, frame, mask=mask)
+        return frame_after_mask
 
     def add_contour(self, mask=None):
         """
@@ -287,22 +284,22 @@ class Vision:
             )
 
             # bitwise mask on the blurred video frame
-            only_rgb = self.only_rgb(frame=frame_blur, mask=frame_threshold)
+            frame_after_filter = self.apply_mask(frame=frame_blur, mask=frame_threshold)
 
             # detecting contours
             contour, heirarchy = self.add_contour(frame_threshold)
 
             # drawing a bounding box around the contour
-            detections = self.draw_bounding_box(contours=contour, frame=only_rgb)
+            detections = self.draw_bounding_box(contours=contour, frame=frame_after_filter)
 
             # tracking the contour detected
             tracked = self.tracker.update(detections)
 
             # display the tracked results
-            self.track_results(tracked, only_rgb)
+            self.track_results(tracked, frame_after_filter)
 
             # display the window
-            cv2.imshow(self.window_tracking, only_rgb)
+            cv2.imshow(self.window_tracking, frame_after_filter)
 
             # allow quitting by pressing the window close button
             if cv2.getWindowProperty(self.window_tracking, cv2.WND_PROP_VISIBLE) < 1:
