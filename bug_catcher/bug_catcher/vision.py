@@ -1,7 +1,7 @@
 """
 Vision processing for the bug catcher.
 
-Captures webcam frames, applies HSV masking and contour detection, and tracks detections \
+Captures webcam frames, applies HSV masking and contour detection, and tracks detections
 using the SORT tracker.
 """
 
