@@ -41,6 +41,7 @@ class RobotState:
         self.eef_link = eef_link
 
         self.ee_pose = Pose()
+        self.ee_pose_stamp = PoseStamped()
         self.current_joint_states = JointState()
 
         self.cb_group_1 = MutuallyExclusiveCallbackGroup()
@@ -88,9 +89,7 @@ class RobotState:
 
         return success, response
 
-    async def fk_callback(
-        self, desired_state: JointState = None
-    ) -> (Int32, PoseStamped):
+    async def fk_callback(self, desired_state: JointState = None) -> (Int32, PoseStamped):
         """
         Calculate fk for the provided goal.
 
@@ -125,32 +124,37 @@ class RobotState:
 
         return success, response
 
-    def get_angles(self) -> JointState:
-        """Return the robot's current joint angles."""
+    def get_angles(self) -> JointState | None:
+        """Return the robot's current joint angles, if they have been received."""
         if self.current_joint_states is not None:
             return self.current_joint_states
 
-    def get_ee_pose(self) -> (bool, Pose):
+    def get_ee_pose(self, want_stamp: bool = False) -> (bool and Pose) | PoseStamped:
         """
         Get the robot's current ee pose by listening to the tf.
 
         Returns
         -------
         success (bool): True if tf was retrieved during this callback. False if returning from past
-        pose (Pose [not Stamped]): The current (or last) ee position and orientation
+        pose (Pose | PoseStamped): The current (or last) ee position and orientation
 
         """
         time = rclpy.time.Time()
         try:
-            ee_tf = self.tf_buffer.lookup_transform(
-                self.base_frame, self.eef_link, time
-            ).transform
+            ee_tf = self.tf_buffer.lookup_transform(self.base_frame, self.eef_link, time).transform
             self.user_node.get_logger().debug(f'ee_tf: {ee_tf}')
             self.ee_pose.position = ee_tf.translation
             self.ee_pose.orientation = ee_tf.rotation
-            return True, self.ee_pose
+            self.ee_pose_stamp.pose = self.ee_pose
+            if want_stamp:
+                return self.stamp_it(self.ee_pose_stamp)
+            else:
+                return True, self.ee_pose
         except TransformException:
-            return False, self.ee_pose
+            if want_stamp:
+                return self.stamp_it(self.ee_pose_stamp)
+            else:
+                return False, self.ee_pose
 
     def joint_callback(self, joint_msg):
         """

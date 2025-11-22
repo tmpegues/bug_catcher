@@ -63,8 +63,8 @@ def test_future_pose():
     test_bug1 = bug.Bug(0, PoseStamped(), bug.Color.red)
     test_bug1.update(pose_1trans)
 
-    future_pose = Pose(
-        position=Point(x=2.0, y=2.0, z=2.0), orientation=pose_1trans.pose.orientation
-    )
+    header_2s = Header()
+    header_2s.stamp.sec, header_2s.stamp.nanosec = 2.0, 0.0
+    future_pose = PoseStamped(header=header_2s, pose=Pose(position=Point(x=2.0, y=2.0, z=2.0)))
 
     assert test_bug1.future_pose == future_pose

@@ -2,8 +2,9 @@
 
 from enum import auto, Enum
 
-from geometry_msgs.msg import Point, Pose, PoseStamped, Quaternion, TwistStamped, Vector3
+from geometry_msgs.msg import Point, PoseStamped, Quaternion, TwistStamped, Vector3
 import numpy as np
+from std_msgs.msg import Header
 
 
 class Color(Enum):
@@ -36,7 +37,7 @@ class Bug:
         self.color = color
 
         self.vel = TwistStamped()
-        self.future_pose = Pose()
+        self.future_pose = PoseStamped()
 
     def update(self, new_pose: PoseStamped):
         """
@@ -86,8 +87,8 @@ class Bug:
         """
         Calculate the velocity and future pose of the bug based on the last two camera frames.
 
-        self.vel (TwistStamped) will be updated
-        self.future_pose (Pose) will be updated
+        self.vel (TwistStamped) will be updated with the average velocity over the last time step
+        self.future_pose (Pose) will be updated with the expected position 1 second in the future
 
         Args:
         ----
@@ -130,8 +131,14 @@ class Bug:
         self.vel = vel
 
         # TMP TODO: add in consideration of angular
-        self.future_pose.orientation = new_pose.pose.orientation
-        fpx = new_pose.pose.position.x + lin_vel_list[0]
-        fpy = new_pose.pose.position.y + lin_vel_list[1]
-        fpz = new_pose.pose.position.z + lin_vel_list[2]
-        self.future_pose.position = Point(x=fpx, y=fpy, z=fpz)
+        time_step_sec = 1.0
+        time_step_nano = 0.0
+        new_header = Header()
+        new_header.stamp.sec = new_pose.header.stamp.sec + time_step_sec
+        new_header.stamp.nanosec = new_pose.header.stamp.nanosec + time_step_nano
+        self.future_pose.header = new_header
+        self.future_pose.pose.orientation = new_pose.pose.orientation
+        fpx = new_pose.pose.position.x + lin_vel_list[0] * time_step_sec + time_step_nano
+        fpy = new_pose.pose.position.y + lin_vel_list[1] * time_step_sec + time_step_nano
+        fpz = new_pose.pose.position.z + lin_vel_list[2] * time_step_sec + time_step_nano
+        self.future_pose.pose.position = Point(x=fpx, y=fpy, z=fpz)

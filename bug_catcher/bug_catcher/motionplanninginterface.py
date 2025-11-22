@@ -8,6 +8,7 @@ from rclpy.node import Node
 
 
 class MotionPlanningInterface:
+    """Ties together functionality of RobotState, MotionPlanner, and Planning SceneClass."""
 
     def __init__(self, node: Node):
         """Initialize the MotionPlanningInterface."""
@@ -29,9 +30,7 @@ class MotionPlanningInterface:
         eef_link = 'fer_hand_tcp'
 
         # Initialize the classes:
-        self.rs = RobotState(
-            node, group_name, base_frame, joint_list, eef_link
-        )
+        self.rs = RobotState(node, group_name, base_frame, joint_list, eef_link)
         self.mp = MotionPlanner(node, self.rs, group_name, eef_link)
         self.ps = PlanningSceneClass(node)
 
@@ -40,17 +39,11 @@ class MotionPlanningInterface:
         self.vertical.x, self.vertical.w = 1.0, 0.0
 
         self.pre_grasp_coord = Pose()
-        self.pre_grasp_coord.orientation = (
-            self.vertical
-        )  # Always go to pre-grip with ee vertical
+        self.pre_grasp_coord.orientation = self.vertical  # Always go to pre-grip with ee vertical
         self.grasp_coord = Pose()
-        self.grasp_coord.orientation = (
-            self.vertical
-        )  # Always grasp with the gripper vertical
+        self.grasp_coord.orientation = self.vertical  # Always grasp with the gripper vertical
         self.goal_coord = Pose()
-        self.goal_coord.orientation = (
-            self.vertical
-        )  # Always grasp with the gripper vertical
+        self.goal_coord.orientation = self.vertical  # Always grasp with the gripper vertical
 
     async def GetReady(self):
         """Move the robot to the 'ready' position."""
@@ -77,16 +70,12 @@ class MotionPlanningInterface:
         self.pre_grasp_coord.orientation.x = self.vertical.x
         self.pre_grasp_coord.orientation.w = self.vertical.w
 
-        self.node.get_logger().info(
-            f'Planning to pre-grasp position: {self.pre_grasp_coord}'
-        )
+        self.node.get_logger().info(f'Planning to pre-grasp position: {self.pre_grasp_coord}')
 
         # Move to pre-grasp position:
 
         # #################### Begin_Citation [8] ##################
-        success, plan = await self.mp.plan_cartesian_path(
-            waypoints=[self.pre_grasp_coord]
-        )
+        success, plan = await self.mp.plan_cartesian_path(waypoints=[self.pre_grasp_coord])
 
         if not success or plan is None:
             self.node.get_logger().warn('Plan failed at stage: cart pre-grasp. Attempting RRT.')
@@ -110,18 +99,14 @@ class MotionPlanningInterface:
         """Open the grippers of the end effector on the robot."""
         gripper = await self.mp.open_gripper()
         if not gripper:
-            self.node.get_logger().warn(
-                'Gripper failed at stage: open-gripper before pick'
-            )
+            self.node.get_logger().warn('Gripper failed at stage: open-gripper before pick')
             return False
         return True
 
     # Move to object-grasp position:
     async def MoveDownToObject(self, obj_name):
         """Lower the object inbetween the gripper fingers."""
-        self.grasp_coord.position = self.ps.obstacles[
-            obj_name
-        ].pose.position
+        self.grasp_coord.position = self.ps.obstacles[obj_name].pose.position
 
         self.node.get_logger().info(
             f'Planning to move down to object position: {self.grasp_coord}'
@@ -158,9 +143,7 @@ class MotionPlanningInterface:
     async def LiftOffTable(self):
         """Lift the object up off the table."""
         self.node.get_logger().info(f'Lifting off the table!: {self.pre_grasp_coord}')
-        success, plan = await self.mp.plan_cartesian_path(
-            waypoints=[self.pre_grasp_coord]
-        )
+        success, plan = await self.mp.plan_cartesian_path(waypoints=[self.pre_grasp_coord])
         if not success or plan is None:
             self.node.get_logger().warn(
                 'Planning failed at stage:\
@@ -222,30 +205,30 @@ class MotionPlanningInterface:
         return True
 
     # Go to a pose by checking if Cartesian is valid and checking RRT if Cartesian is invalid
-    async def GoTo(self, pose: Pose) -> bool:
+    async def GoTo(self, pose: Pose, cart_only: bool = False) -> bool:
         """
         Go to a pose by checking if Cartesian is valid and checking RRT if Cartesian is invalid.
 
         Args:
         ----
-        pose (Pose) - the target pose to plan and execute to
+        pose (Pose): the target pose to plan and execute to
+        cart_only (bool): True if you only want to allow cartesian paths.
 
         Returns
         -------
-        (bool) - True if  plan and execution was successful (doesn't specifiy Cart or RRT)
+        (bool) - True if plan and execution was successful (doesn't specifiy Cart or RRT)
 
         """
         success = False
         # 1: check cartesian
-        success, plan = await self.mp.plan_cartesian_path(
-            waypoints=[pose]
-        )
-        # 2: if Cartesian failed, check RRT
-        if not success or plan is None:
+        success, plan = await self.mp.plan_cartesian_path(waypoints=[pose])
+        # 2: if Cartesian failed and cart_only isn't set, check RRT
+        if cart_only and (not success or plan is None):
+            self.node.get_logger().warn('Plan failed at stage: Cartesian. Not Attempting RRT.')
+            return False
+        elif not success or plan is None:
             self.node.get_logger().warn('Plan failed at stage: Cartesian. Attempting RRT.')
-            success, plan = await self.mp.plan_to_pose(
-                pose.position, pose.orientation
-            )
+            success, plan = await self.mp.plan_to_pose(pose.position, pose.orientation)
             if not success or plan is None:
                 self.node.get_logger().warn('Pre-grasp failed both Cartesian and RRT path.')
                 return False
@@ -270,8 +253,6 @@ class MotionPlanningInterface:
         # width = 0.005 is the default value we set, but 1 cm seems resonable for the Hexbug size
         gripper = await self.mp.close_gripper(width=0.005)
         if not gripper:
-            self.node.get_logger().warn(
-                'Gripper failed at stage: GripBug'
-            )
+            self.node.get_logger().warn('Gripper failed at stage: GripBug')
             return False
         return True
