@@ -12,7 +12,11 @@ import numpy as np
 
 =======
 from geometry_msgs.msg import Point, Pose, Quaternion
+<<<<<<< HEAD
 >>>>>>> 9b78d5a (Adding skeleton of interdicting_pick function.)
+=======
+import numpy as np
+>>>>>>> 7eba53d (Finished logic of interdicting_pick(). Untested.)
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.node import Node
@@ -113,11 +117,14 @@ class BugMover:
         Ben and Pushkar recommended canceling the action if not complete and you want to change it
             That seems pretty good to me
 
+<<<<<<< HEAD
         Args:
         ----
         bug (bug.Bug): The bug to stalk and pick up
         wrist_cam (bool): True if a wrist camera is available and can be used for timing the grasp
 
+=======
+>>>>>>> 7eba53d (Finished logic of interdicting_pick(). Untested.)
         Args:
         ----
         bug (bug.Bug): The bug to stalk and pick up
@@ -135,6 +142,7 @@ class BugMover:
         # # TODO: This tracker should either ignore the fingers or directly set them every loop
         # tracking = self.node.mpi.GoTo(bug_pose)
 
+<<<<<<< HEAD
         # if not tracking:
         #     # Retry once or twice or something like that?
         #     started_tracking = False
@@ -177,6 +185,24 @@ class BugMover:
             self.node.get_logger().info('Stalking pick has failed')
         else:
             success = self.node.mpi.CloseGripper()
+=======
+        if not tracking:
+            # Retry once or twice or something like that?
+            started_tracking = False
+            pass
+        else:
+            # wait half a second and make sure tracking is is good the whole time
+            if not started_tracking:
+                start_time = self.node.get_clock().now()
+                started_tracking = True
+            # Track for 0.5 seconds, then flip the switch to pounce
+            if self.node.get_clock().now() - start_time >= Duration(nanosec=5 * 10**8):
+                pounce = True
+                pass
+            if pounce:
+                success = self.node.mpi.CloseGripper
+                # TMP TODO: break the continuous tracking
+>>>>>>> 7eba53d (Finished logic of interdicting_pick(). Untested.)
 
         return success
 
@@ -337,11 +363,11 @@ class BugMover:
 
     async def interdicting_pick(self, bug: bug.Bug, wrist_cam: bool = False) -> bool:
         """
-        Pick up the bug by anticipating its future state.
+        Pick up the bug by moving to its anticipated future state.
 
         Args:
         ----
-        bug (bug.Bug): The bug to stalk and pick up
+        bug (bug.Bug): The bug to interdict and pick up
         wrist_cam (bool): True if a wrist camera is available and can be used for timing the grasp
 
         Returns
@@ -349,4 +375,34 @@ class BugMover:
         success (bool): True if the robot gripper thinks it grasped an object
 
         """
+        # 1. Future pose is currently 1 second projected in the future. Get the ee there in .75 sec
+        # Do not execute this if a cartesian path is not available.
+        # TMP TODO: figure out how to set the speed of a cartesian trajectory
+        tracking = await self.node.mpi.GoTo(pose=bug.future_pose.pose, cart_only=True)
+
+        # 2. Do not continue if the cartesian path failed
+        if not tracking:
+            return False
+        else:
+            # 3.a Close gripper at the time of the future pose if wrist cam is not available
+            if not wrist_cam:
+                # TMP TODO: How long does it take to close the gripper?
+                while self.node.get_clock.now() < bug.future_pose.header.stamp:
+                    pass
+                self.node.mpi.GripBug()
+            elif wrist_cam:
+                # While the distance from the bug to the ee pose is too large, don't do anything
+                success = False
+                while not success:
+                    ee_pose = self.node.mpi.rs.get_ee_pose()
+                distance = np.linalg.norm(
+                    [
+                        bug.pose.pose.position.x - ee_pose.pose.position.x,
+                        bug.pose.pose.position.y - ee_pose.pose.position.y,
+                    ]
+                )
+                while distance > 0.03:  # 3 cm separation is when we close the grippers
+                    pass
+                # Once the while loop is exited, close immediately
+                self.node.mpi.GripBug()
         return True
