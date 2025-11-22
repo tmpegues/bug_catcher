@@ -17,7 +17,6 @@ from rclpy.node import Node
 
 class BugMover:
     """Class containins various techniques for picking up a detected HexBug."""
-    """Class containins various techniques for picking up a detected HexBug."""
 
     def __init__(self, node: Node):
         """Initialize the BugMover."""
@@ -50,11 +49,9 @@ class BugMover:
     # Public Functions
     # -----------------------------------------------------------------
     async def stalking_pick(self, bug: bug.Bug, wrist_cam: bool = False) -> bool:
-    async def stalking_pick(self, bug: bug.Bug, wrist_cam: bool = False) -> bool:
         """
         Pick up the bug by tracking its current state (no anticipation).
 
-        TMP TODO: the pose needs to be allowed to be constantly updated. It should take a
         TMP TODO: the pose needs to be allowed to be constantly updated. It should take a
         self.current_bug.pose or something like that that can be updated while the trajectory is
         executing and change the end point
@@ -68,20 +65,9 @@ class BugMover:
         ----
         bug (bug.Bug): The bug to stalk and pick up
         wrist_cam (bool): True if a wrist camera is available and can be used for timing the grasp
-        This function would benefit from using MoveIt's Servo sub-package. This will take a long
-        time for me to learn and is therefore being demoted in priority.
-
-        Ben and Pushkar recommended canceling the action if not complete and you want to change it
-            That seems pretty good to me
-
-        Args:
-        ----
-        bug (bug.Bug): The bug to stalk and pick up
-        wrist_cam (bool): True if a wrist camera is available and can be used for timing the grasp
 
         Returns
         -------
-        success (bool): True if the robot gripper thinks it grasped an object
         success (bool): True if the robot gripper thinks it grasped an object
 
         """
@@ -108,10 +94,7 @@ class BugMover:
             if pounce:
                 success = self.node.mpi.CloseGripper
                 # TMP TODO: break the continuous tracking
-                success = self.node.mpi.CloseGripper
-                # TMP TODO: break the continuous tracking
 
-        return success
         return success
 
     async def ambushing_pick(self, bridge_end_pose: Pose) -> bool:
