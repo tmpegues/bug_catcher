@@ -4,8 +4,11 @@ import asyncio
 import math
 
 from bug_catcher import bug as bug
-from geometry_msgs.msg import Point, Pose, Quaternion
+
+from geometry_msgs.msg import Point, Pose
+
 import numpy as np
+
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.duration import Duration
@@ -13,6 +16,7 @@ from rclpy.node import Node
 
 
 class BugMover:
+    """Class containins various techniques for picking up a detected HexBug."""
     """Class containins various techniques for picking up a detected HexBug."""
 
     def __init__(self, node: Node):
@@ -28,18 +32,13 @@ class BugMover:
     # -----------------------------------------------------------------
     # Internal Helper Functions
     # -----------------------------------------------------------------
-    def _cal_distance(self, p1: Point, p2: Point):
+    def _calc_distance(self, p1: Point, p2: Point):
         """Calculate the Euclidean distance between two points."""
         return math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2 + (p1.z - p2.z) ** 2)
 
-    # TODO： Decide whether use Pose or Point
-    def _cal_travel_time(self, start_pose: Pose, end_pose: Pose) -> float:
+    def _calc_travel_time(self, start_pose: Pose, end_pose: Pose) -> float:
         """Calculate the estimated travel time needed for robot to move from start to end."""
-        distance = math.sqrt(
-            (start_pose.x - end_pose.x) ** 2
-            + (start_pose.y - end_pose.y) ** 2
-            + (start_pose.z - end_pose.z) ** 2
-        )
+        distance = self._calc_distance(start_pose.position, end_pose.position)
 
         ROBOT_SPEED = 0.1  # TODO: Update with actual robot speed
         OVERHEAD_TIME = 1.0  # TODO: Update with actual overhead time
@@ -51,9 +50,11 @@ class BugMover:
     # Public Functions
     # -----------------------------------------------------------------
     async def stalking_pick(self, bug: bug.Bug, wrist_cam: bool = False) -> bool:
+    async def stalking_pick(self, bug: bug.Bug, wrist_cam: bool = False) -> bool:
         """
         Pick up the bug by tracking its current state (no anticipation).
 
+        TMP TODO: the pose needs to be allowed to be constantly updated. It should take a
         TMP TODO: the pose needs to be allowed to be constantly updated. It should take a
         self.current_bug.pose or something like that that can be updated while the trajectory is
         executing and change the end point
@@ -67,9 +68,20 @@ class BugMover:
         ----
         bug (bug.Bug): The bug to stalk and pick up
         wrist_cam (bool): True if a wrist camera is available and can be used for timing the grasp
+        This function would benefit from using MoveIt's Servo sub-package. This will take a long
+        time for me to learn and is therefore being demoted in priority.
+
+        Ben and Pushkar recommended canceling the action if not complete and you want to change it
+            That seems pretty good to me
+
+        Args:
+        ----
+        bug (bug.Bug): The bug to stalk and pick up
+        wrist_cam (bool): True if a wrist camera is available and can be used for timing the grasp
 
         Returns
         -------
+        success (bool): True if the robot gripper thinks it grasped an object
         success (bool): True if the robot gripper thinks it grasped an object
 
         """
@@ -96,81 +108,119 @@ class BugMover:
             if pounce:
                 success = self.node.mpi.CloseGripper
                 # TMP TODO: break the continuous tracking
+                success = self.node.mpi.CloseGripper
+                # TMP TODO: break the continuous tracking
 
         return success
+        return success
 
-    async def ambushing_pick(self, bridge_end_position: Point) -> bool:
+    async def ambushing_pick(self, bridge_end_pose: Pose) -> bool:
         """
         Pick up the bug by moving to a bridge position and then closing the gripper.
 
         Args
         ----
-        bridge_end_position (Point): The coordinate where the bridge ends (drop-off point).
+        bridge_end_pose (Pose): The target pose where the robot should wait to ambush the bug.
 
         Returns
         -------
-        success (bool): True if the robot gripper thinks it picked up an object.
+        success (bool): True if the ambush sequence completed successfully
+            (gripper closed), False otherwise.
 
         """
-        bug_pose = self.node.current_bug.pose.position
-        bug_vel = self.node.current_bug_speed
+        # --- Phase 1: Monitoring Loop ---
+        opportunity_found = False
+        monitor_counter = 0
 
-        success, current_robot_pose = self.node.mpi.rs.get_ee_pose()
+        while rclpy.ok():
+            # Update data
+            bug_pose_msg = self.node.current_bug.pose
+            bug_vel = getattr(self.node, 'current_bug_speed', 0.0)
 
-        ambush_pose = Pose()
-        ambush_pose.position.x = bridge_end_position.x
-        ambush_pose.position.y = bridge_end_position.y
-        ambush_pose.position.z = (
-            bridge_end_position.z + self.GRIPPER_OFFSET_Z
-        )  # Hover slightly above the bridge height
-        ambush_pose.orientation = Quaternion(
-            x=1.0, y=0.0, z=0.0, w=0.0
-        )  # TODO: Update with correct orientation
+            success, current_robot_pose = self.node.mpi.rs.get_ee_pose()
+            # Handle potential Tuple return from RobotState for compatibility
+            if isinstance(current_robot_pose, tuple):
+                current_robot_pose = current_robot_pose[1]
 
-        # Time race calculation
-        dist_bug_to_bridge = self._cal_distance(bug_pose, bridge_end_position)
-        t_bug_arrival = dist_bug_to_bridge / max(bug_vel, 0.01)  # Avoid division by zero
+            # Calculate metrics
+            dist_bug_to_goal = self._calc_distance(bug_pose_msg.position, bridge_end_pose.position)
 
-        t_robot_travel = self._cal_travel_time(current_robot_pose.position, ambush_pose.position)
+            # --- CONDITIONS ---
+            # 1. Is the bug on the bridge? (Passed the Y threshold?)
+            is_on_bridge = bug_pose_msg.position.y < self.BRIDGE_ENTRY_THRESHOLD_Y
 
-        if t_bug_arrival < t_robot_travel:
-            self.node.get_logger().info(
-                'Ambush aborted: Robot cannot reach ambush point before bug arrives.'
-            )
+            # 2. Is the bug moving fast enough to be a sprint?
+            is_sprinting = bug_vel > 0.05
+
+            # 3. Is the bug far enough from the goal to give us time?
+            is_far_enough = dist_bug_to_goal > 0.1
+
+            if is_on_bridge and is_sprinting and is_far_enough:
+                t_bug = dist_bug_to_goal / bug_vel
+
+                # Setup Ambush Pose
+                ambush_pose = Pose()
+                ambush_pose.position.x = bridge_end_pose.position.x
+                ambush_pose.position.y = bridge_end_pose.position.y
+                ambush_pose.position.z = bridge_end_pose.position.z + self.GRIPPER_OFFSET_Z
+                ambush_pose.orientation = bridge_end_pose.orientation
+
+                t_robot = self._calc_travel_time(current_robot_pose, ambush_pose)
+
+                # 4. Time Race: Can we beat the bug?
+                if t_bug > t_robot:
+                    self.logger.info(
+                        f'>>> OPPORTUNITY! Bug ETA: {t_bug:.2f}s, Robot Needs: {t_robot:.2f}s'
+                    )
+                    opportunity_found = True
+                    break
+
+            monitor_counter += 1
+            if monitor_counter % 20 == 0:  # Log every 2 seconds
+                self.logger.info(
+                    f'Watching... OnBridge: {is_on_bridge}, '
+                    f'Dist: {dist_bug_to_goal:.2f}m, Speed: {bug_vel:.2f}m/s'
+                )
+
+            await asyncio.sleep(0.1)
+
+        if not opportunity_found:
             return False
 
-        # Move to ambush position
-        move_success = self.node.mpi.GoTo(ambush_pose)
+        # --- Phase 2: Execution ---
+        self.logger.info(f'Moving to Ambush Point: {ambush_pose.position}')
+        move_success = await self.node.mpi.GoTo(ambush_pose)
+
         if not move_success:
-            self.node.get_logger().info('Ambush failed: Robot could not reach ambush position.')
+            self.logger.error('Failed to move to ambush point!')
             return False
 
         await self.node.mpi.OpenGripper()
-        self.logger.info('Trap Set! Waiting for bug...')
+        self.logger.info('TRAP SET! Waiting for contact...')
 
-        timeout_counter = 0
-        MAX_WAIT_CYCLES = 1000  # Avoid infinite loop (e.g., 10 seconds)
+        # --- Phase 3: Trigger ---
+        # Wait for bug to enter the trigger radius
+        wait_counter = 0
+        max_wait_cycles = 6000  # 60 seconds timeout
 
-        while rclpy.ok() and timeout_counter < MAX_WAIT_CYCLES:
-            if self.node.current_bug:
-                curr_bug_pos = self.node.current_bug.pose.position
-                dist_now = self._get_distance(curr_bug_pos, bridge_end_position)
+        while rclpy.ok() and wait_counter < max_wait_cycles:
+            curr_bug = self.node.current_bug.pose.position
+            dist = self._calc_distance(curr_bug, bridge_end_pose.position)
 
-                if dist_now < self.TRAP_TRIGGER_DISTANCE:
-                    self.logger.info(f'Bug in range ({dist_now:.3f}m). SNAP!')
-                    break  # Exit loop to close gripper
+            if dist < self.TRAP_TRIGGER_DISTANCE:
+                self.logger.info(f'>>> SNAP! Bug in range ({dist:.3f}m).')
+                break
 
-            timeout_counter += 1
+            wait_counter += 1
+            await asyncio.sleep(0.01)
 
-            await asyncio.sleep(0.01)  # 100Hz polling
-
-        if timeout_counter >= MAX_WAIT_CYCLES:
-            self.logger.info("Ambush Timed out. Bug didn't arrive?")
+        if wait_counter >= max_wait_cycles:
+            self.logger.warn('Ambush timed out. Bug missed?')
             return False
 
-        await self.node.mpi.CloseGripper()
-        self.logger.info('Ambush sequence complete.')
-
+        # Use the base MotionPlanner close_gripper
+        await self.node.mpi.mp.close_gripper()
+        self.logger.info('AMBUSH COMPLETE.')
         return True
 
     async def interdicting_pick(self, bug: bug.Bug, wrist_cam: bool = False) -> bool:
