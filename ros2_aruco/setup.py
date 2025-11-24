@@ -28,6 +28,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         *recursive_files('share/' + package_name, 'launch'),
         *recursive_files('share/' + package_name, 'config'),
+        *recursive_files('share/' + package_name, 'models'),
 
     ],
     install_requires=['setuptools'],
@@ -44,7 +45,8 @@ setup(
     entry_points={
         'console_scripts': [
             'aruco_node = ros2_aruco.aruco_node:main',
-            'aruco_generate_marker = ros2_aruco.aruco_generate_marker:main'
+            'aruco_generate_marker = ros2_aruco.aruco_generate_marker:main',
+            'calibration_node = ros2_aruco.calibration_node:main',
         ],
     },
 )

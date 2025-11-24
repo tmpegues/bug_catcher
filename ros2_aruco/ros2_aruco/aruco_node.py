@@ -1,7 +1,10 @@
 """
-This package has been modified from: https://github.com/JMU-ROBOTICS-VIVA/ros2_aruco/tree/main/ros2_aruco.
+This node locates Aruco AR markers in images and publishes their ids and poses. 
+The node also publishes a target color based on interpolated visual identification at the switch 
+position, as well as calibration for determining robot base to world enclosure.
 
-This node locates Aruco AR markers in images and publishes their ids and poses.
+This node has been modified from:
+https://github.com/JMU-ROBOTICS-VIVA/ros2_aruco/tree/main/ros2_aruco.
 
 Subscriptions:
    /camera/image_raw (sensor_msgs.msg.Image)
@@ -23,10 +26,6 @@ Parameters:
     image_topic - image topic to subscribe to (default /camera/image_raw)
     camera_info_topic - camera info topic to subscribe to
                          (default /camera/camera_info)
-
-Author: Nathan Sprague
-Version: 10/26/2020
-
 """
 
 import rclpy
@@ -48,10 +47,12 @@ from tf2_ros.buffer import Buffer
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 from tf2_ros.transform_listener import TransformListener
 
+
 class ArucoNode(rclpy.node.Node):
     def __init__(self):
         super().__init__("aruco_node")
 
+        # ################################### Begin_Citation[NK1] ##############################
         # Declare and read parameters:
         self.declare_parameter(
             name="marker_size",
@@ -93,10 +94,8 @@ class ArucoNode(rclpy.node.Node):
                 description="Camera optical frame to use.",
             ),
         )
-
-        self.marker_size = (
-            self.get_parameter("marker_size").get_parameter_value().double_value
-        )
+        # Read and set the values of each parameter:
+        self.marker_size = (self.get_parameter("marker_size").get_parameter_value().double_value)
         self.get_logger().info(f"Marker size: {self.marker_size}")
 
         dictionary_id_name = (
@@ -104,9 +103,7 @@ class ArucoNode(rclpy.node.Node):
         )
         self.get_logger().info(f"Marker type: {dictionary_id_name}")
 
-        image_topic = (
-            self.get_parameter("image_topic").get_parameter_value().string_value
-        )
+        image_topic = (self.get_parameter("image_topic").get_parameter_value().string_value)
         self.get_logger().info(f"Image topic: {image_topic}")
 
         info_topic = (
@@ -114,9 +111,7 @@ class ArucoNode(rclpy.node.Node):
         )
         self.get_logger().info(f"Image info topic: {info_topic}")
 
-        self.camera_frame = (
-            self.get_parameter("camera_frame").get_parameter_value().string_value
-        )
+        self.camera_frame = (self.get_parameter("camera_frame").get_parameter_value().string_value)
 
         # Make sure we have a valid dictionary id:
         try:
@@ -130,16 +125,17 @@ class ArucoNode(rclpy.node.Node):
             options = "\n".join([s for s in dir(cv2.aruco) if s.startswith("DICT")])
             self.get_logger().error("valid options: {}".format(options))
 
-        # Set up subscriptions
+        # SUBSCRIPTIONS:
+        # Camera_info subscription
         self.info_sub = self.create_subscription(
             CameraInfo, info_topic, self.camera_info_callback, qos_profile_sensor_data
         )
-
+        # Camera_image
         self.create_subscription(
             Image, image_topic, self.image_callback, qos_profile_sensor_data
         )
 
-        # Set up publishers
+        # PUBLISHERS:
         self.poses_pub = self.create_publisher(PoseArray, "aruco_poses", 10)
         self.markers_pub = self.create_publisher(ArucoMarkers, "aruco_markers", 10)
 
@@ -151,6 +147,7 @@ class ArucoNode(rclpy.node.Node):
         self.aruco_dictionary = cv2.aruco.Dictionary_get(dictionary_id)
         self.aruco_parameters = cv2.aruco.DetectorParameters_create()
         self.bridge = CvBridge()
+    # ################################### End_Citation[NK1] ##############################
 
     def camera_info_callback(self, info_msg):
         self.info_msg = info_msg
@@ -163,12 +160,12 @@ class ArucoNode(rclpy.node.Node):
         self.static_broadcaster = StaticTransformBroadcaster(self)
         world_base_tf = TransformStamped()
         world_base_tf.header.stamp = self.get_clock().now().to_msg()
-        world_base_tf.header.frame_id = 'world'
+        world_base_tf.header.frame_id = 'base'          # Will relate it to base of the robot
         # This will be the location of the camera.
         world_base_tf.child_frame_id = 'camera_link'
-        world_base_tf.transform.translation.x = 3.0     # Set camera location
+        world_base_tf.transform.translation.x = 0.05     # Set camera location
         world_base_tf.transform.translation.y = 0.0
-        world_base_tf.transform.translation.z = 3.0
+        world_base_tf.transform.translation.z = 2.0
         self.static_broadcaster.sendTransform(world_base_tf)
 
     def update_markerframes(self, markers, num_markers):
@@ -252,8 +249,8 @@ class ArucoNode(rclpy.node.Node):
             self.poses_pub.publish(pose_array)  # May not need this. In custom markers
             self.markers_pub.publish(markers)
 
-        # Publish the frame of the markers to the tf tree:
-        self.update_markerframes(markers, len(pose_array.poses))
+            # Publish the frame of the markers to the tf tree:
+            self.update_markerframes(markers, len(pose_array.poses))
 
 
 def main():

@@ -1,0 +1,17 @@
+/**:
+  ros__parameters:
+  # Calibration parameters in meters (m)
+    calibration:
+      tags:
+        tag_1:
+          x: -0.1143
+          y: -0.4572
+        tag_2:
+          x: -0.1143
+          y: 0.4064
+        tag_3:
+          x: 0.6858
+          y: 0.4064
+        tag_4:
+          x: 0.6858
+          y: -0.4572
