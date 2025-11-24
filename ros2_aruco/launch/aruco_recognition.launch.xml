@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- Launch the calibration node -->
+    <node pkg="ros2_aruco" exec="calibration_node" name="calibration_node">
+        <param from = "$(find-pkg-share ros2_aruco)/config/aruco_parameters.yaml"/>
+    </node>
+</launch>
