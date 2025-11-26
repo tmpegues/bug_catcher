@@ -1,3 +1,5 @@
+"""Package setup."""
+
 from pathlib import Path
 
 from setuptools import find_packages, setup
@@ -12,9 +14,10 @@ def recursive_files(prefix, path):
     :return: List of tuples. 1st element of each tuple is destination path, 2nd element is a list
              of files to copy to that path
     """
-    return [(str(Path(prefix)/subdir),
-            [str(file) for file in subdir.glob('*') if not file.is_dir()])
-            for subdir in Path(path).glob('**')]
+    return [
+        (str(Path(prefix) / subdir), [str(file) for file in subdir.glob('*') if not file.is_dir()])
+        for subdir in Path(path).glob('**')
+    ]
 
 
 package_name = 'bug_catcher'
@@ -28,7 +31,6 @@ setup(
         ('share/' + package_name, ['package.xml']),
         *recursive_files('share/' + package_name, 'launch'),
         *recursive_files('share/' + package_name, 'config'),
-
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -44,7 +46,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'pick_node = bug_catcher.pick_node:main',
+            'catcher_node = bug_catcher.catcher_node:main',
         ],
     },
 )
