@@ -1,162 +1,175 @@
 """
 Vision processing for the bug catcher.
 
-Captures webcam frames, applies HSV masking and contour detection, and tracks detections \
+Captures webcam frames, applies HSV masking and contour detection, and tracks detections
 using the SORT tracker.
 """
+
+from pathlib import Path
+
+from ament_index_python.packages import get_package_share_directory
+
+from bug_catcher.sort import Sort
 
 import cv2
 
 import numpy as np
 
-from sort import Sort
+import yaml
 
 
 class Vision:
     """
     Vision processing for the bug catcher.
 
-    Handles webcam frames, HSV masking, contour detection, and tracking using the SORT tracker.
-    Provides methods to tune HSV thresholds via OpenCV trackbars and to display tracking results.
+    Captures webcam feed, applies color masking, detects contours, and tracks
+    objects with persistent IDs. Supports multiple color profiles.
     """
 
     def __init__(self):
         """
         Initialize.
 
-        Set up windows, video capture, HSV threshold defaults, trackbars,
-        and the object tracker.
+        Setup the blur value, the object tracker and the current low and high hsv values
+
         """
-        self.window_name = 'Webcam'
-        self.window_mask_name = 'Mask'
-        self.window_only_rgb = 'Only_RGB'
+        # Blur Value
+        self.blur = 15
 
-        self.cap = cv2.VideoCapture(0)
+        # Current Value
+        self.current_low_hsv = (0, 0, 0)
+        self.current_high_hsv = (180, 255, 255)
 
-        cv2.namedWindow(self.window_name)
-
-        # store current frame
-        self.current_frame = None
-
-        self.max_value = 255
-        self.max_value_H = 360 // 2
-        self.max_blur = 100
-        self.low_H = 0
-        self.low_S = 0
-        self.low_V = 0
-        self.blur = 1
-        self.high_H = self.max_value_H
-        self.high_S = self.max_value
-        self.high_V = self.max_value
-        self.low_H_name = 'Low H'
-        self.low_S_name = 'Low S'
-        self.low_V_name = 'Low V'
-        self.high_H_name = 'High H'
-        self.high_S_name = 'High S'
-        self.high_V_name = 'High V'
-        self.blur_name = 'Blur'
-
+        # Tracker
+        # #################### Begin_Citation [13] ##################
         self.tracker = Sort(max_age=15, min_hits=2, iou_threshold=0.0)
+        # #################### End_Citation [13] ##################
         self.detections = []
 
-        cv2.createTrackbar(
-            self.low_H_name,
-            self.window_name,
-            self.low_H,
-            self.max_value_H,
-            self.on_low_H_thresh_trackbar,
-        )
+    def load_color(self, filename):
+        """Load the colors from the config file."""
+        # Read through the yaml file and get the hsv values for the respective color:
+        pkg_share = get_package_share_directory('bug_catcher')
+        file = Path(pkg_share) / 'config' / filename
+        with open(file, 'r') as f:
+            data = yaml.safe_load(f)
 
-        cv2.createTrackbar(
-            self.high_H_name,
-            self.window_name,
-            self.high_H,
-            self.max_value_H,
-            self.on_high_H_thresh_trackbar,
-        )
+        for entry in data:
+            # Get the color hsv
+            if entry['color'].lower() == 'blue':
+                self.blue_low_hsv = np.array(entry['hsv']['low'])
+                self.blue_high_hsv = np.array(entry['hsv']['high'])
+            elif entry['color'].lower() == 'green':
+                self.green_low_hsv = np.array(entry['hsv']['low'])
+                self.green_high_hsv = np.array(entry['hsv']['high'])
+            elif entry['color'].lower() == 'orange':
+                self.orange_low_hsv = np.array(entry['hsv']['low'])
+                self.orange_high_hsv = np.array(entry['hsv']['high'])
+            elif entry['color'].lower() == 'purple':
+                self.purple_low_hsv = np.array(entry['hsv']['low'])
+                self.purple_high_hsv = np.array(entry['hsv']['low'])
 
-        cv2.createTrackbar(
-            self.low_S_name,
-            self.window_name,
-            self.low_S,
-            self.max_value,
-            self.on_low_S_thresh_trackbar,
-        )
+    def processing_video_frame(self, frame, low_hsv, high_hsv):
+        """
+        Apply a blur filter and color filter on the video frame, apply a mask excluding the ROI.
 
-        cv2.createTrackbar(
-            self.high_S_name,
-            self.window_name,
-            self.high_S,
-            self.max_value,
-            self.on_high_S_thresh_trackbar,
-        )
+        This function first applies a blur filter on the input video frame. The blurred
+        frame is then converted to HSV, and the given lower and higher HSV thresholds
+        are used to create a binary mask. This mask is applied to the
+        blurred frame so that only the areas within the selected HSV range remain
+        visible. Finally all the pixels region of interest (the area within the frame
+        that recieves the input color for the filter) is replaced by black [0, 0, 0].
 
-        cv2.createTrackbar(
-            self.low_V_name,
-            self.window_name,
-            self.low_V,
-            self.max_value,
-            self.on_low_V_thresh_trackbar,
-        )
+        Args
+        ----
+        frame : np.ndarray
+            Video frame on which the filters need to be applied.
+        low_hsv : tuple[int, int, int]
+            Lower HSV value of the color filter.
+        high_hsv : tuple[int, int, int]
+            Higher HSV value of the color filter.
 
-        cv2.createTrackbar(
-            self.high_V_name,
-            self.window_name,
-            self.high_V,
-            self.max_value,
-            self.on_high_V_thresh_trackbar,
-        )
+        Returns
+        -------
+        frame_after_mask_except_ROI : np.ndarray
+            Blurred video frame with the color filter applied and only the areas
+            inside the HSV range visible, except the ROI which is black.
+        frame_threshold : np.ndarray
+            Binary mask where the filtered color is white(1) and everything
+            else is black(0).
 
-        cv2.createTrackbar(
-            self.blur_name,
-            self.window_name,
-            self.blur,
-            self.max_blur,
-            self.blur_trackbar,
-        )
+        """
+        frame_blur = cv2.GaussianBlur(frame, (self.blur, self.blur), 0)
+        frame_HSV = cv2.cvtColor(frame_blur, cv2.COLOR_BGR2HSV)
+        frame_threshold = cv2.inRange(frame_HSV, low_hsv, high_hsv)
 
-    def on_low_H_thresh_trackbar(self, val):
-        """Update the lower Hue threshold from the trackbar."""
-        self.low_H = val
-        self.low_H = min(self.high_H - 1, self.low_H)
-        cv2.setTrackbarPos(self.low_H_name, self.window_name, self.low_H)
+        # replacing all the pixels in the ROI to black so that the tracker
+        # does not pick it up
+        frame_after_mask = cv2.bitwise_and(frame, frame, mask=frame_threshold)
+        frame_after_mask_except_ROI = frame_after_mask
+        frame_after_mask_except_ROI[50:200, 50:200] = [0, 0, 0]
+        return frame_after_mask_except_ROI, frame_threshold
 
-    def on_high_H_thresh_trackbar(self, val):
-        """Update the upper Hue threshold from the trackbar."""
-        self.high_H = val
-        self.high_H = max(self.high_H, self.low_H + 1)
-        cv2.setTrackbarPos(self.high_H_name, self.window_name, self.high_H)
+    def detect_input_and_switch_filter(self, frame):
+        """
+        Switch the color based on the HSV value in the input region of interest.
 
-    def on_low_S_thresh_trackbar(self, val):
-        """Update the lower Saturation threshold from the trackbar."""
-        self.low_S = val
-        self.low_S = min(self.high_S - 1, self.low_S)
-        cv2.setTrackbarPos(self.low_S_name, self.window_name, self.low_S)
+        Args
+        ----
+        frame : np.ndarray
+            Video frame from which the input hsv values are detected in the ROI
 
-    def on_high_S_thresh_trackbar(self, val):
-        """Update the higher Saturation threshold from the trackbar."""
-        self.high_S = val
-        self.high_S = max(self.high_S, self.low_S + 1)
-        cv2.setTrackbarPos(self.high_S_name, self.window_name, self.high_S)
+        Return
+        ------
+        None
 
-    def on_low_V_thresh_trackbar(self, val):
-        """Update the lower Value threshold from the trackbar."""
-        self.low_V = val
-        self.low_V = min(self.high_V - 1, self.low_V)
-        cv2.setTrackbarPos(self.low_V_name, self.window_name, self.low_V)
+        """
+        color = frame[50:200, 50:200]
+        hsv_color = cv2.cvtColor(color, cv2.COLOR_BGR2HSV)
 
-    def on_high_V_thresh_trackbar(self, val):
-        """Update the higher Value threshold from the trackbar."""
-        self.high_V = val
-        self.high_V = max(self.high_V, self.low_V + 1)
-        cv2.setTrackbarPos(self.high_V_name, self.window_name, self.high_V)
+        if np.any(cv2.inRange(hsv_color, self.blue_low_hsv, self.blue_high_hsv)):
+            print('switch to blue filter')
+            self.current_low_hsv = self.blue_low_hsv
+            self.current_high_hsv = self.blue_high_hsv
+        elif np.any(cv2.inRange(hsv_color, self.green_low_hsv, self.green_high_hsv)):
+            print('switch to green filter')
+            self.current_low_hsv = self.green_low_hsv
+            self.current_high_hsv = self.green_high_hsv
+        elif np.any(cv2.inRange(hsv_color, self.purple_low_hsv, self.purple_high_hsv)):
+            print('switch to purple filter')
+            self.current_low_hsv = self.purple_low_hsv
+            self.current_high_hsv = self.purple_high_hsv
+        elif np.any(cv2.inRange(hsv_color, self.orange_low_hsv, self.orange_high_hsv)):
+            print('switch to orange filter')
+            self.current_low_hsv = self.orange_low_hsv
+            self.current_high_hsv = self.orange_high_hsv
 
-    def blur_trackbar(self, val):
-        """Update the blur from the trackbar."""
-        self.blur = val * 2 + 1
-        if self.blur < 1:
-            self.blur = 1
-        cv2.setTrackbarPos(self.blur_name, self.window_name, val)
+    def apply_border_on_ROI(self, frame_after_filter, frame):
+        """
+        Apply a border around the input region of interest and replace the pixel.
+
+        This function applies a border around the input region of interest and replaces
+        the pixels inside with the pixels in the original frame. This is done so that
+        the input region of interest is always visible and is not included in the
+        tracking.
+
+        Args
+        ----
+        frame_after_filter : np.ndarray
+           Video frame on which the border needs to be applied.
+        frame : np.ndarray
+           Original Video frame
+
+        Return
+        ------
+        frame_after_filter : np.ndarray
+           Video frame after border has been applied to ROI and pixels have been replaced
+
+        """
+        YELLOW = [0, 255, 255]
+        frame_after_filter[50:200, 50:200] = frame[50:200, 50:200]
+        cv2.rectangle(frame_after_filter, (50, 50), (200, 200), YELLOW, 5)
+        return frame_after_filter
 
     def add_contour(self, mask=None):
         """
@@ -185,19 +198,19 @@ class Vision:
 
     def draw_bounding_box(self, contours, frame):
         """
-        Draw a bounding box around the given contour on the frame.
+        Draw a bounding box around the given contour on the video frame.
 
         Args
         ----
         contours : np.ndarray
             Contour for which the bounding box will be drawn.
         frame : np.ndarray
-            Image frame where the bounding box will be rendered.
+            Video frame where the bounding box will be rendered.
 
         Returns
         -------
         frame : np.ndarray
-            Frame with the drawn bounding box.
+            Video frame with the drawn bounding box.
 
         """
         if contours is None or len(contours) == 0:
@@ -211,7 +224,7 @@ class Vision:
 
             if len(contour) < 5:
                 continue
-
+            # #################### Begin_Citation [13] ##################
             x, y, w, h = cv2.boundingRect(contour)
 
             if w < 5 or h < 5:
@@ -227,26 +240,29 @@ class Vision:
 
     def track_results(self, tracked, frame):
         """
-        Draw tracking results on the frame.
+        Draw tracking results on the video frame.
 
         Args
         ----
         tracked : (np.ndarray)
             Array of tracked bounding boxes with IDs.
         frame : (np.ndarray)
-            Frame on which tracking results will be drawn.
+            Video frame on which tracking results will be drawn.
 
         Returns
         -------
-        np.ndarray: Frame with drawn bounding boxes, centers, and IDs.
+        centre : tuple[int, int]
+            Center of the tracked object in the camera coordinate frame (pixels)
 
         """
+        center = None
         for x1, y1, x2, y2, track_id in tracked:
             if np.isnan(x1) or np.isnan(y1) or np.isnan(x2) or np.isnan(y2):
                 continue
             x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
             cx = (x1 + x2) // 2
             cy = (y1 + y2) // 2
+            center = (cx, cy)
 
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
             cv2.circle(frame, (cx, cy), 4, (0, 255, 0), -1)
@@ -259,57 +275,7 @@ class Vision:
                 (0, 255, 0),
                 2,
             )
+        if center is not None:
+            return center
 
-    def run(self):
-        """Run the main application loop."""
-        if not self.cap.isOpened():
-            print('Error: Could not open camera')
-            return
-
-        while True:
-            ret, frame = self.cap.read()
-            if not ret:
-                break
-
-            frame_blur = cv2.GaussianBlur(frame, (self.blur, self.blur), 0)
-            frame_HSV = cv2.cvtColor(frame_blur, cv2.COLOR_BGR2HSV)
-            frame_threshold = cv2.inRange(
-                frame_HSV,
-                (self.low_H, self.low_S, self.low_V),
-                (self.high_H, self.high_S, self.high_V),
-            )
-
-            only_rgb = cv2.bitwise_and(frame, frame, mask=frame_threshold)
-
-            self.current_frame = frame
-
-            contour, heirarchy = self.add_contour(frame_threshold)
-            detections = self.draw_bounding_box(contours=contour, frame=only_rgb)
-
-            tracked = self.tracker.update(detections)
-            print(f'Detections: {detections}, Tracked: {tracked}')
-
-            self.track_results(tracked, only_rgb)
-
-            cv2.imshow(self.window_name, frame_blur)
-            cv2.imshow(self.window_mask_name, frame_threshold)
-            cv2.imshow(self.window_only_rgb, only_rgb)
-
-            # --- allow quitting with Q ---
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-
-            # --- allow quitting by pressing the window close button ---
-            if (
-                cv2.getWindowProperty(self.window_name, cv2.WND_PROP_VISIBLE) < 1
-                or cv2.getWindowProperty(self.window_mask_name, cv2.WND_PROP_VISIBLE) < 1
-                or cv2.getWindowProperty(self.window_only_rgb, cv2.WND_PROP_VISIBLE) < 1
-            ):
-                break
-
-        self.cap.release()
-        cv2.destroyAllWindows()
-
-
-if __name__ == '__main__':
-    Vision().run()
+    # #################### End_Citation [13] ##################
