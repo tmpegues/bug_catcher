@@ -46,7 +46,7 @@ setup(
         'console_scripts': [
             'aruco_node = ros2_aruco.aruco_node:main',
             'aruco_generate_marker = ros2_aruco.aruco_generate_marker:main',
-            'calibration_node = ros2_aruco.calibration_node:main',
+            'calibration_node = ros2_aruco.Calibration_TargetPublisher:main'
         ],
     },
 )
