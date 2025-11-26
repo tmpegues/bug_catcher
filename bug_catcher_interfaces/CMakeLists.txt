@@ -13,6 +13,7 @@ find_package(geometry_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/Pick.srv"
   "msg/BugsInFrame.msg"
+  "msg/ArucoMarkers.msg"
 
   DEPENDENCIES
   geometry_msgs)

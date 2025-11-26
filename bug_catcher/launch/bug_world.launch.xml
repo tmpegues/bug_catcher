@@ -15,7 +15,7 @@
     </include>
 
     <!--Launch the visual package for aruco tag identification-->
-    <include file="$(find-pkg-share ros2_aruco)/launch/aruco_recognition.launch.xml"/>
+    <include file="$(find-pkg-share bug_catcher)/launch/aruco_recognition.launch.xml"/>
 
     <!--Load the planning scene and await action service call-->
     <node pkg="bug_catcher" exec="pick_node">

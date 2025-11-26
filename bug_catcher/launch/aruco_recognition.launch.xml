@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- Launch the calibration node -->
+    <node pkg="bug_catcher" exec="calibration_node" name="calibration_node">
+        <param from = "$(find-pkg-share bug_catcher)/config/aruco_parameters.yaml"/>
+    </node>
+</launch>
