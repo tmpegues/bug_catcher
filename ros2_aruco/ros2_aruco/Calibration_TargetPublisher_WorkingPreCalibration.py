@@ -51,6 +51,8 @@ from tf_transformations import quaternion_from_matrix
 class CalibrationNode(rclpy.node.Node):
     def __init__(self):
         super().__init__("calibration_node")
+        self.get_logger().info("CalibrationNode STARTING __init__")
+
         # ################################### Begin_Citation[NK1] ##############################
         # Declare and read camera parameters:
         self.declare_parameter(
@@ -115,14 +117,14 @@ class CalibrationNode(rclpy.node.Node):
         self.camera_frame = (self.get_parameter("camera_frame").get_parameter_value().string_value)
         # Set the tag parameter values:
         self.tag_params = {
-            1: (self.get_parameter("calibration.tags.tag_2.x").value,
-                self.get_parameter("calibration.tags.tag_2.y").value),
-            2: (self.get_parameter("calibration.tags.tag_3.x").value,
-                self.get_parameter("calibration.tags.tag_3.y").value),
-            3: (self.get_parameter("calibration.tags.tag_4.x").value,
-                self.get_parameter("calibration.tags.tag_4.y").value),
-            4: (self.get_parameter("calibration.tags.tag_1.x").value,
-                self.get_parameter("calibration.tags.tag_1.y").value),
+            "1": (self.get_parameter("calibration.tags.tag_1.x").value,
+                  self.get_parameter("calibration.tags.tag_1.y").value),
+            "2": (self.get_parameter("calibration.tags.tag_2.x").value,
+                  self.get_parameter("calibration.tags.tag_2.y").value),
+            "3": (self.get_parameter("calibration.tags.tag_3.x").value,
+                  self.get_parameter("calibration.tags.tag_3.y").value),
+            "4": (self.get_parameter("calibration.tags.tag_4.x").value,
+                  self.get_parameter("calibration.tags.tag_4.y").value),
         }
 
         # Make sure we have a valid dictionary id for Aruco markers:
@@ -161,6 +163,21 @@ class CalibrationNode(rclpy.node.Node):
         self.static_broadcaster = StaticTransformBroadcaster(self)
         self.dynamic_broadcaster = TransformBroadcaster(self)
 
+        # Set an initial pre-calibrated location between the base and the camera:
+        base_camera_tf = TransformStamped()
+        base_camera_tf.header.stamp = self.get_clock().now().to_msg()
+        base_camera_tf.header.frame_id = 'base'          # Will relate it to base of the robot
+        # This will be the location of the camera.
+        base_camera_tf.child_frame_id = 'camera_link'
+        base_camera_tf.transform.translation.x = 0.05     # Set camera location
+        base_camera_tf.transform.translation.y = 0.0
+        base_camera_tf.transform.translation.z = 2.0
+        base_camera_tf.transform.rotation.x = 0.0
+        base_camera_tf.transform.rotation.y = 0.0
+        base_camera_tf.transform.rotation.z = 0.0
+        base_camera_tf.transform.rotation.w = 1.0
+        self.static_broadcaster.sendTransform(base_camera_tf)
+
         # Establish the transforms of Robot to Tags that we already know.
         #   These are established from environment set up (Designed to be constant/known)
         for marker_id, (x, y) in self.tag_params.items():
@@ -170,7 +187,7 @@ class CalibrationNode(rclpy.node.Node):
             static_tf.child_frame_id = f"aruco_{marker_id}"
             static_tf.transform.translation.x = x
             static_tf.transform.translation.y = y
-            static_tf.transform.translation.z = 0.025    # Z offset of base on table top.
+            static_tf.transform.translation.z = 0.0
             static_tf.transform.rotation.x = 0.0
             static_tf.transform.rotation.y = 0.0
             static_tf.transform.rotation.z = 0.0
@@ -185,6 +202,7 @@ class CalibrationNode(rclpy.node.Node):
         self.aruco_dictionary = cv2.aruco.Dictionary_get(dictionary_id)
         self.aruco_parameters = cv2.aruco.DetectorParameters_create()
         self.bridge = CvBridge()
+        self.get_logger().info("CalibrationNode FINISHED __init__")
     # ################################### End_Citation[NK1] ##############################
 
     def camera_info_callback(self, info_msg):
@@ -195,7 +213,7 @@ class CalibrationNode(rclpy.node.Node):
         # Assume that camera parameters will remain the same during simulation and delete:
         self.destroy_subscription(self.info_sub)
 
-    def calibrateCamera_Aruco(self, markers, num_markers):
+    def update_markerframes(self, markers, num_markers):
         """
         Update the marker frames and publishes them.
 
@@ -204,64 +222,149 @@ class CalibrationNode(rclpy.node.Node):
             orientation: The orientation of the marker.
 
         """
-        # Get the position of the camera to marker, then invert:
-        marker_camera_tf = {}  # Initialize a dictionary to hold transforms from camera.
+        self.get_logger().info('Publishing marker frames...')
         for i in range(num_markers):
+            # Connect the Robot using a dynamic broadcaster from world to brick
+            marker_transform = TransformStamped()
+            marker_transform.header.stamp = self.get_clock().now().to_msg()
+            marker_transform.header.frame_id = 'camera_color_optical_frame'
+            marker_transform.child_frame_id = f'aruco_{markers.marker_ids[i]}'
+
+            # Set the location of the marker frame:
+            marker_transform.transform.translation.x = markers.poses[i].position.x
+            marker_transform.transform.translation.y = markers.poses[i].position.y
+            marker_transform.transform.translation.z = markers.poses[i].position.z
+            marker_transform.transform.rotation.x = markers.poses[i].orientation.x
+            marker_transform.transform.rotation.y = markers.poses[i].orientation.y
+            marker_transform.transform.rotation.z = markers.poses[i].orientation.z
+            marker_transform.transform.rotation.w = markers.poses[i].orientation.w
+            try:
+                self.dynamic_broadcaster.sendTransform(marker_transform)
+            except Exception as e:
+                self.get_logger().error(f"Failed to send dynamic transform for {marker_transform.child_frame_id}: {e}")
+
+    def calibrate(self, markers, num_markers):
+        """
+        Calibrate the camera to the base of the robot if atleast 2 markers are identified.
+
+        Args_
+            Markers: The markers being used for calibration  (ID, Pose)
+            num_markers: The number of markers being used
+
+        """
+        # Given the markers identified, calculate and average the transform from camera to base.
+        self.get_logger().info('Calibrating Camera Position to Robot base...')
+        camera_marker_tf = {}  # Initialize a dictionary to hold transforms from camera.
+        robot_marker_tf = {}  # Initialize a dictionary to hold known transforms
+        for i in range(num_markers):
+            # Get the latest transform between the marker and camera published:
+            try:
+                trans = self.buffer.lookup_transform(
+                    'camera_color_optical_frame',
+                    f'aruco_{markers.marker_ids[i]}',
+                    rclpy.time.Time(),
+                    Duration(seconds=1.0)
+                )
+                camera_marker_tf[markers.marker_ids[i]] = trans
+            except (tf2_ros.LookupException,
+                    tf2_ros.ExtrapolationException,
+                    tf2_ros.ConnectivityException) as e:
+                self.get_logger().warning(f"Transform for marker {markers.marker_ids[i]} not available: {e}")
+
+            # We should now have a dict of the transforms that exist from camera to markers:
+            try:
+                trans = self.buffer.lookup_transform(
+                    'base',
+                    f'aruco_{markers.marker_ids[i]}',
+                    rclpy.time.Time(),
+                    Duration(seconds=1.0)
+                )
+                robot_marker_tf[markers.marker_ids[i]] = trans
+            except (tf2_ros.LookupException,
+                    tf2_ros.ExtrapolationException,
+                    tf2_ros.ConnectivityException) as e:
+                self.get_logger().warning(f"Transform for marker {markers.marker_ids[i]} not available: {e}")
+
+        # We now have the camera to marker tranfroms and the base to marker transforms.
+        #   It is now possible to calibrate the position of the base relative to the camera.
+        base_camera_matrices = []   # Store all matrices from the tracked markers.
+
+        for marker_id in camera_marker_tf.keys():
+            cam_tf = camera_marker_tf[marker_id]
+            base_tf = robot_marker_tf[marker_id]
+
             # Convert the camera transform to a 4x4 transformation matrix:
             cam_rot = R.from_quat([
-                markers.poses[i].orientation.x,
-                markers.poses[i].orientation.y,
-                markers.poses[i].orientation.z,
-                markers.poses[i].orientation.w,
+                cam_tf.transform.rotation.x,
+                cam_tf.transform.rotation.y,
+                cam_tf.transform.rotation.z,
+                cam_tf.transform.rotation.w
             ]).as_matrix()
             cam_trans = np.array([
-                markers.poses[i].position.x,
-                markers.poses[i].position.y,
-                markers.poses[i].position.z,
+                cam_tf.transform.translation.x,
+                cam_tf.transform.translation.y,
+                cam_tf.transform.translation.z
             ]).reshape(3, 1)
             cam_matrix = np.eye(4)
             cam_matrix[:3, :3] = cam_rot
             cam_matrix[:3, 3] = cam_trans.flatten()
 
-            # Invert the matrix:
-            cam_matrix = np.linalg.inv(cam_matrix)
-            marker_camera_tf[markers.marker_ids[i]] = cam_matrix
+            # Convert the base transform to a 4x4 transformation matrix:
+            base_rot = R.from_quat([
+                base_tf.transform.rotation.x,
+                base_tf.transform.rotation.y,
+                base_tf.transform.rotation.z,
+                base_tf.transform.rotation.w
+            ]).as_matrix()
+            base_trans = np.array([
+                base_tf.transform.translation.x,
+                base_tf.transform.translation.y,
+                base_tf.transform.translation.z
+            ]).reshape(3, 1)
+            base_matrix = np.eye(4)
+            base_matrix[:3, :3] = base_rot
+            base_matrix[:3, 3] = base_trans.flatten()
+
+            # Compute base to camera transformation:
+            base_camera_matrix = base_matrix @ np.linalg.inv(cam_matrix)
+            base_camera_matrices.append(base_camera_matrix)
 
         # Average all base to camera transforms:
-        translations = np.array([m[:3, 3] for m in marker_camera_tf.values()])
+        translations = np.array([m[:3, 3] for m in base_camera_matrices])
         avg_translation = translations.mean(axis=0)
 
-        quats = np.array([R.from_matrix(m[:3, :3]).as_quat() for m in marker_camera_tf.values()])
-        avg_quat = R.from_quat(quats).mean().as_quat()
+        quats = np.array([R.from_matrix(m[:3, :3]).as_quat() for m in base_camera_matrices])
+        avg_quat = quats.mean(axis=0)
         avg_quat /= np.linalg.norm(avg_quat)
 
         # Create final 4x4 matrix of averaged location data:
-        marker_camera_avg = np.eye(4)
-        marker_camera_avg[:3, :3] = R.from_quat(avg_quat).as_matrix()
-        marker_camera_avg[:3, 3] = avg_translation
+        base_camera_avg = np.eye(4)
+        base_camera_avg[:3, :3] = R.from_quat(avg_quat).as_matrix()
+        base_camera_avg[:3, 3] = avg_translation
 
-        # Connect the Robot using a dynamic broadcaster from world to brick
-        marker_transform = TransformStamped()
-        marker_transform.header.stamp = self.get_clock().now().to_msg()
-        marker_transform.header.frame_id = f'aruco_{markers.marker_ids[i]}'
-        marker_transform.child_frame_id = 'camera_link'
-        # Set the location of the marker frame:
-        marker_transform.transform.translation.x = marker_camera_avg[0, 3]
-        marker_transform.transform.translation.y = marker_camera_avg[1, 3]
-        marker_transform.transform.translation.z = marker_camera_avg[2, 3]
+        # Update the static transform of the base to camera transformation to the tf:
+        base_camera_tf = TransformStamped()
+        base_camera_tf.header.stamp = self.get_clock().now().to_msg()
+        base_camera_tf.header.frame_id = 'base'          # Will relate it to base of the robot
+        # This will be the location of the camera.
+        base_camera_tf.child_frame_id = 'camera_color_optical_frame'
+        base_camera_tf.transform.translation.x = base_camera_avg[0, 3]
+        base_camera_tf.transform.translation.y = base_camera_avg[1, 3]
+        base_camera_tf.transform.translation.z = base_camera_avg[2, 3]
         # Compute the Quaternion:
-        q = quaternion_from_matrix(marker_camera_avg)
-        marker_transform.transform.rotation.x = q[0]
-        marker_transform.transform.rotation.y = q[1]
-        marker_transform.transform.rotation.z = q[2]
-        marker_transform.transform.rotation.w = q[3]
-        self.dynamic_broadcaster.sendTransform(marker_transform)
+        q = quaternion_from_matrix(base_camera_avg[:3, :3])
+        base_camera_tf.transform.rotation.x = q[0]
+        base_camera_tf.transform.rotation.y = q[1]
+        base_camera_tf.transform.rotation.z = q[2]
+        base_camera_tf.transform.rotation.w = q[3]
+        self.dynamic_broadcaster.sendTransform(base_camera_tf)
 
     def image_callback(self, img_msg):
         """Update each frame by publishing the position of the markers."""
         if self.info_msg is None:
             self.get_logger().warn("No camera info has been received!")
             return
+        self.get_logger().info('Getting image...')
         # Convert the image message to cv2:
         cv_image = self.bridge.imgmsg_to_cv2(img_msg, desired_encoding="mono8")
 
@@ -318,8 +421,12 @@ class CalibrationNode(rclpy.node.Node):
             self.poses_pub.publish(pose_array)
             self.markers_pub.publish(markers)
 
-            # Publish the camera relative to the markers to the tf:
-            self.calibrateCamera_Aruco(markers, len(pose_array.poses))
+            # Publish the frame of the markers to the tf tree:
+            self.update_markerframes(markers, len(pose_array.poses))
+
+            # Calibrate the Camera to the Robot and publish markers to the tf_tree:
+            if len(pose_array.poses) >= 2:
+                self.calibrate(markers, len(pose_array.poses))
 
 
 def main():
