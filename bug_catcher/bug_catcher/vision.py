@@ -97,6 +97,7 @@ class Vision:
         frame_threshold : np.ndarray
             Binary mask where the filtered color is white(1) and everything
             else is black(0).
+
         """
         frame_blur = cv2.GaussianBlur(frame, (self.blur, self.blur), 0)
         frame_HSV = cv2.cvtColor(frame_blur, cv2.COLOR_BGR2HSV)
@@ -150,12 +151,14 @@ class Vision:
         This function applies a border around the input region of interest and replaces
         the pixels inside with the pixels in the original frame. This is done so that
         the input region of interest is always visible and is not included in the
-        tracking
+        tracking.
 
         Args
         ----
         frame_after_filter : np.ndarray
            Video frame on which the border needs to be applied.
+        frame : np.ndarray
+           Original Video frame
 
         Return
         ------
