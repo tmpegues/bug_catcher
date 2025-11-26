@@ -22,17 +22,21 @@ class BugMover:
         """Initialize the BugMover."""
         self.node = node
 
+        self.GRIPPER_OFFSET_Z = 0.01  # 1cm above the bridge surface so we don't crash into it
+
         self.cb_group_1 = MutuallyExclusiveCallbackGroup()
 
         self.node.get_logger().debug('BugCatcher initialization complete')
 
-        self.GRIPPER_OFFSET_Z = 0.01  # 1cm above the bridge surface so we don't crash into it
-
     # -----------------------------------------------------------------
     # Internal Helper Functions
     # -----------------------------------------------------------------
-    def _calc_distance(self, p1: Point, p2: Point):
-        """Calculate the Euclidean distance between two points."""
+    def _calc_distance(self, p1: Point | Pose, p2: Point | Pose):
+        """Calculate the Euclidean distance between two points or poses."""
+        if type(p1) is Pose:
+            p1 = p1.position
+        if type(p2) is Pose:
+            p2 = p2.position
         return math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2 + (p1.z - p2.z) ** 2)
 
     def _calc_travel_time(self, start_pose: Pose, end_pose: Pose) -> float:

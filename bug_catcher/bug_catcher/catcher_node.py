@@ -1,6 +1,7 @@
 """The Bug Catcher's main decision making and control node."""
 
 from bug_catcher.bug import Bug
+from bug_catcher.bugmover import BugMover
 from bug_catcher.motionplanninginterface import MotionPlanningInterface
 from bug_catcher_interfaces.msg import BugsInFrame
 import rclpy
@@ -33,6 +34,7 @@ class CatcherNode(Node):
         self.setup_bug_color()
 
         self.bug_list = []
+        self.mover = BugMover(self)
 
         self.get_logger().info('Catcher Node: initialization complete')
 
@@ -88,6 +90,27 @@ class CatcherNode(Node):
         for detected_bug in bugs_in_frame.id:
             self.bug_list.append(Bug(detected_bug.id, detected_bug.pose, detected_bug.color))
         pass
+
+    def decide_which_bug(self):
+        """
+        Decide which bug to pick.
+
+        Right now, I'm assuming that it will just be base on which bug is closest to the ee.
+
+        Returns
+        -------
+        bug: the bug closest to the end effector, which should be the easiest bug to pick up.
+
+        """
+        min_dist = 100
+        best_bug_id = -1
+        for existing_bug in self.bug_list:
+            dist = self.mover._calc_distance(existing_bug.pose.pose, self.mpi.rs.get_ee_pose())
+            if dist < min_dist:
+                min_dist = dist
+                best_bug_id = existing_bug.ID
+
+        return self.bug_list[best_bug_id]
 
     # # Call the gripper to go pick up the object:
     # async def pick_callback(self, request, response):
