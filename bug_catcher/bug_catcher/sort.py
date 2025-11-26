@@ -546,7 +546,7 @@ if __name__ == '__main__':
         )
 
         seq_dets = np.loadtxt(seq_dets_fn, delimiter=',')
-        seq = seq_dets_fn[pattern.find('*') :].split(os.path.sep)[0]
+        seq = seq_dets_fn[pattern.find('*') :].split(os.path.sep)[0]     # noqa: E203
 
         out_path = os.path.join('output', f'{seq}.txt')
         with open(out_path, 'w', encoding='utf-8') as out_file:

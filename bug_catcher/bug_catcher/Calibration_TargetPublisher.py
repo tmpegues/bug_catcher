@@ -26,115 +26,115 @@ Parameters:
                          (default /camera/camera_info)
 """
 
+from bug_catcher_interfaces.msg import ArucoMarkers
+import cv2
+from cv_bridge import CvBridge
+from geometry_msgs.msg import Pose, PoseArray
+from geometry_msgs.msg import TransformStamped
+import numpy as np
+from rcl_interfaces.msg import ParameterDescriptor, ParameterType
 import rclpy
 import rclpy.node
 from rclpy.qos import qos_profile_sensor_data
-from cv_bridge import CvBridge
-import numpy as np
-import cv2
+from scipy.spatial.transform import Rotation as R
 from sensor_msgs.msg import CameraInfo
 from sensor_msgs.msg import Image
-from geometry_msgs.msg import PoseArray, Pose
-from bug_catcher_interfaces.msg import ArucoMarkers
-from rcl_interfaces.msg import ParameterDescriptor, ParameterType
-
-from geometry_msgs.msg import TransformStamped
 from tf2_ros import TransformBroadcaster
 from tf2_ros.buffer import Buffer
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 from tf2_ros.transform_listener import TransformListener
-from scipy.spatial.transform import Rotation as R
 from tf_transformations import quaternion_from_matrix
 
 
 class CalibrationNode(rclpy.node.Node):
+
     def __init__(self):
-        super().__init__("calibration_node")
+        super().__init__('calibration_node')
         # ################################### Begin_Citation[NK1] ##############################
         # Declare and read camera parameters:
         self.declare_parameter(
-            name="marker_size",
+            name='marker_size',
             value=0.0625,
             descriptor=ParameterDescriptor(
                 type=ParameterType.PARAMETER_DOUBLE,
-                description="Size of the markers in meters.",
+                description='Size of the markers in meters.',
             ),
         )
         self.declare_parameter(
-            name="aruco_dictionary_id",
-            value="DICT_5X5_250",
+            name='aruco_dictionary_id',
+            value='DICT_5X5_250',
             descriptor=ParameterDescriptor(
                 type=ParameterType.PARAMETER_STRING,
-                description="Dictionary that was used to generate markers.",
+                description='Dictionary that was used to generate markers.',
             ),
         )
         self.declare_parameter(
-            name="image_topic",
-            value="/camera/camera/color/image_raw",
+            name='image_topic',
+            value='/camera/camera/color/image_raw',
             descriptor=ParameterDescriptor(
                 type=ParameterType.PARAMETER_STRING,
-                description="Image topic to subscribe to.",
+                description='Image topic to subscribe to.',
             ),
         )
         self.declare_parameter(
-            name="camera_info_topic",
-            value="/camera/camera/color/camera_info",
+            name='camera_info_topic',
+            value='/camera/camera/color/camera_info',
             descriptor=ParameterDescriptor(
                 type=ParameterType.PARAMETER_STRING,
-                description="Camera info topic to subscribe to.",
+                description='Camera info topic to subscribe to.',
             ),
         )
         self.declare_parameter(
-            name="camera_frame",
-            value="",
+            name='camera_frame',
+            value='',
             descriptor=ParameterDescriptor(
                 type=ParameterType.PARAMETER_STRING,
-                description="Camera optical frame to use.",
+                description='Camera optical frame to use.',
             ),
         )
         # Declare tag calibration parameters:
-        self.declare_parameter("calibration.tags.tag_1.x", -0.1143)
-        self.declare_parameter("calibration.tags.tag_1.y", -0.4572)
-        self.declare_parameter("calibration.tags.tag_2.x", -0.1143)
-        self.declare_parameter("calibration.tags.tag_2.y", 0.4064)
-        self.declare_parameter("calibration.tags.tag_3.x", 0.6858)
-        self.declare_parameter("calibration.tags.tag_3.y", 0.4064)
-        self.declare_parameter("calibration.tags.tag_4.x", 0.6858)
-        self.declare_parameter("calibration.tags.tag_4.y", -0.4572)
+        self.declare_parameter('calibration.tags.tag_1.x', -0.1143)
+        self.declare_parameter('calibration.tags.tag_1.y', -0.4572)
+        self.declare_parameter('calibration.tags.tag_2.x', -0.1143)
+        self.declare_parameter('calibration.tags.tag_2.y', 0.4064)
+        self.declare_parameter('calibration.tags.tag_3.x', 0.6858)
+        self.declare_parameter('calibration.tags.tag_3.y', 0.4064)
+        self.declare_parameter('calibration.tags.tag_4.x', 0.6858)
+        self.declare_parameter('calibration.tags.tag_4.y', -0.4572)
 
         # Read and set the values of each parameter:
-        self.marker_size = (self.get_parameter("marker_size").get_parameter_value().double_value)
+        self.marker_size = (self.get_parameter('marker_size').get_parameter_value().double_value)
         dictionary_id_name = (
-            self.get_parameter("aruco_dictionary_id").get_parameter_value().string_value
+            self.get_parameter('aruco_dictionary_id').get_parameter_value().string_value
         )
-        image_topic = (self.get_parameter("image_topic").get_parameter_value().string_value)
+        image_topic = (self.get_parameter('image_topic').get_parameter_value().string_value)
         info_topic = (
-            self.get_parameter("camera_info_topic").get_parameter_value().string_value
+            self.get_parameter('camera_info_topic').get_parameter_value().string_value
         )
-        self.camera_frame = (self.get_parameter("camera_frame").get_parameter_value().string_value)
+        self.camera_frame = (self.get_parameter('camera_frame').get_parameter_value().string_value)
         # Set the tag parameter values:
         self.tag_params = {
-            1: (self.get_parameter("calibration.tags.tag_2.x").value,
-                self.get_parameter("calibration.tags.tag_2.y").value),
-            2: (self.get_parameter("calibration.tags.tag_3.x").value,
-                self.get_parameter("calibration.tags.tag_3.y").value),
-            3: (self.get_parameter("calibration.tags.tag_4.x").value,
-                self.get_parameter("calibration.tags.tag_4.y").value),
-            4: (self.get_parameter("calibration.tags.tag_1.x").value,
-                self.get_parameter("calibration.tags.tag_1.y").value),
+            1: (self.get_parameter('calibration.tags.tag_2.x').value,
+                self.get_parameter('calibration.tags.tag_2.y').value),
+            2: (self.get_parameter('calibration.tags.tag_3.x').value,
+                self.get_parameter('calibration.tags.tag_3.y').value),
+            3: (self.get_parameter('calibration.tags.tag_4.x').value,
+                self.get_parameter('calibration.tags.tag_4.y').value),
+            4: (self.get_parameter('calibration.tags.tag_1.x').value,
+                self.get_parameter('calibration.tags.tag_1.y').value),
         }
 
         # Make sure we have a valid dictionary id for Aruco markers:
         try:
             dictionary_id = cv2.aruco.__getattribute__(dictionary_id_name)
-            if type(dictionary_id) != type(cv2.aruco.DICT_5X5_100):
+            if type(dictionary_id) is not type(cv2.aruco.DICT_5X5_100):
                 raise AttributeError
         except AttributeError:
             self.get_logger().error(
-                "bad aruco_dictionary_id: {}".format(dictionary_id_name)
+                'bad aruco_dictionary_id: {}'.format(dictionary_id_name)
             )
-            options = "\n".join([s for s in dir(cv2.aruco) if s.startswith("DICT")])
-            self.get_logger().error("valid options: {}".format(options))
+            options = '\n'.join([s for s in dir(cv2.aruco) if s.startswith('DICT')])
+            self.get_logger().error('valid options: {}'.format(options))
 
         # SUBSCRIPTIONS:
         # Camera_info subscription
@@ -148,8 +148,8 @@ class CalibrationNode(rclpy.node.Node):
 
         # PUBLISHERS:
         # Aruco marker publisher: (ID,Pose)
-        self.markers_pub = self.create_publisher(ArucoMarkers, "aruco_markers", 10)
-        self.poses_pub = self.create_publisher(PoseArray, "aruco_poses", 10)
+        self.markers_pub = self.create_publisher(ArucoMarkers, 'aruco_markers', 10)
+        self.poses_pub = self.create_publisher(PoseArray, 'aruco_poses', 10)
 
         # Listener:
         # The buffer stores received tf frames
@@ -166,7 +166,7 @@ class CalibrationNode(rclpy.node.Node):
             static_tf = TransformStamped()
             static_tf.header.stamp = self.get_clock().now().to_msg()
             static_tf.header.frame_id = 'base'
-            static_tf.child_frame_id = f"aruco_{marker_id}"
+            static_tf.child_frame_id = f'aruco_{marker_id}'
             static_tf.transform.translation.x = x
             static_tf.transform.translation.y = y
             static_tf.transform.translation.z = 0.025    # Z offset of base on table top.
@@ -267,17 +267,17 @@ class CalibrationNode(rclpy.node.Node):
     def image_callback(self, img_msg):
         """Update each frame by publishing the position of the markers."""
         if self.info_msg is None:
-            self.get_logger().warn("No camera info has been received!")
+            self.get_logger().warn('No camera info has been received!')
             return
         # Convert the image message to cv2:
-        cv_image = self.bridge.imgmsg_to_cv2(img_msg, desired_encoding="mono8")
+        cv_image = self.bridge.imgmsg_to_cv2(img_msg, desired_encoding='mono8')
 
         # Establish the Marker and position array:
         markers = ArucoMarkers()
         pose_array = PoseArray()
 
         # Set the camera frame:
-        if self.camera_frame == "":
+        if self.camera_frame == '':
             markers.header.frame_id = self.info_msg.header.frame_id
             pose_array.header.frame_id = self.info_msg.header.frame_id
         else:
@@ -300,7 +300,13 @@ class CalibrationNode(rclpy.node.Node):
             # Draw detected markers
             cv2.aruco.drawDetectedMarkers(cv_image, corners, marker_ids)
             for i in range(len(marker_ids)):
-                cv2.drawFrameAxes(cv_image, self.intrinsic_mat, self.distortion, rvecs[i], tvecs[i], length=0.1)
+                cv2.drawFrameAxes(cv_image,
+                                  self.intrinsic_mat,
+                                  self.distortion,
+                                  rvecs[i],
+                                  tvecs[i],
+                                  length=0.1
+                                  )
 
             for i, marker_id in enumerate(marker_ids):
                 pose = Pose()
@@ -339,5 +345,5 @@ def main():
     rclpy.shutdown()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
