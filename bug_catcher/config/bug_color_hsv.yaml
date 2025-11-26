@@ -1,0 +1,19 @@
+- color: "blue"
+  hsv:
+    low: [100, 150, 0]
+    high: [140, 225, 225]
+
+- color: "green"
+  hsv:
+    low: [35, 82, 80]
+    high: [85, 225, 225]
+
+- color: "purple"
+  hsv:
+    low: [113, 40, 20]
+    high: [160, 225, 225]
+
+- color: "orange"
+  hsv:
+    low: [0, 150, 120]
+    high: [180, 225, 225]
