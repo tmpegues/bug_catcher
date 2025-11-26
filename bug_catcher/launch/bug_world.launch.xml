@@ -1,0 +1,25 @@
+<launch>
+    <arg name="demo" default="True" description="bool: true will launch the Franka demo.launch.py. False will open rviz, but not the demo"/>
+
+    <!--Launch the Franka Rviz Configuration-->
+    <include file="$(find-pkg-share franka_fer_moveit_config)/launch/demo.launch.py" if="$(eval $(var demo)==True)"/>
+    <include file="$(find-pkg-share franka_fer_moveit_config)/launch/moveit_rviz.launch.py" if="$(eval $(var demo)==False)">
+        <arg  name ="robot_ip" value="panda0.robot"/>
+    </include>
+
+    <!--Launch the Realsense Camera Node-->
+    <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py">
+        <arg name="depth_module.profile" value="1280x720x30"/>
+        <arg name="pointcloud.enable" value="true"/>
+        <arg name="rgb_camera.profile" value="1280x720x30"/>
+    </include>
+
+    <!--Launch the visual package for aruco tag identification-->
+    <include file="$(find-pkg-share bug_catcher)/launch/aruco_recognition.launch.xml"/>
+
+    <!--Load the planning scene and await action service call-->
+    <node pkg="bug_catcher" exec="pick_node">
+        <param name="filename" value="$(find-pkg-share bug_catcher)/config/objects.yaml"/>
+    </node>
+
+</launch>
