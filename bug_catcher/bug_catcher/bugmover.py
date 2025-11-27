@@ -4,7 +4,9 @@ import asyncio
 
 from bug_catcher import bug as bug
 from bug_catcher import mover_funcs as mv
+from bug_catcher import mover_funcs as mv
 
+from geometry_msgs.msg import Pose
 from geometry_msgs.msg import Pose
 
 import numpy as np
@@ -33,12 +35,25 @@ class BugMover:
     # def _calc_distance(self, p1: Point | Pose, p2: Point | Pose):
     #     """
     #     Calculate the Euclidean distance between two points or poses.
+    # # -----------------------------------------------------------------
+    # # Internal Helper Functions
+    # # -----------------------------------------------------------------
+    # def _calc_distance(self, p1: Point | Pose, p2: Point | Pose):
+    #     """
+    #     Calculate the Euclidean distance between two points or poses.
 
     #     Args:
     #     ----
     #     p1 (Point | Pose): the initial position to calculate distance from
     #     p2 (Point | Pose): the final position to calculate distance to
+    #     Args:
+    #     ----
+    #     p1 (Point | Pose): the initial position to calculate distance from
+    #     p2 (Point | Pose): the final position to calculate distance to
 
+    #     Returns
+    #     -------
+    #     (float) the Euclidian distance between the Points or Poses
     #     Returns
     #     -------
     #     (float) the Euclidian distance between the Points or Poses
@@ -49,14 +64,27 @@ class BugMover:
     #     if type(p2) is Pose:
     #         p2 = p2.position
     #     return math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2 + (p1.z - p2.z) ** 2)
+    #     """
+    #     if type(p1) is Pose:
+    #         p1 = p1.position
+    #     if type(p2) is Pose:
+    #         p2 = p2.position
+    #     return math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2 + (p1.z - p2.z) ** 2)
 
+    # def _calc_travel_time(self, start_pose: Pose, end_pose: Pose) -> float:
+    #     """Calculate the estimated travel time needed for robot to move from start to end."""
+    #     distance = self._calc_distance(start_pose.position, end_pose.position)
     # def _calc_travel_time(self, start_pose: Pose, end_pose: Pose) -> float:
     #     """Calculate the estimated travel time needed for robot to move from start to end."""
     #     distance = self._calc_distance(start_pose.position, end_pose.position)
 
     #     ROBOT_SPEED = 0.1  # TODO: Update with actual robot speed
     #     OVERHEAD_TIME = 1.0  # TODO: Update with actual overhead time
+    #     ROBOT_SPEED = 0.1  # TODO: Update with actual robot speed
+    #     OVERHEAD_TIME = 1.0  # TODO: Update with actual overhead time
 
+    #     travel_time = distance / ROBOT_SPEED + OVERHEAD_TIME
+    #     return travel_time
     #     travel_time = distance / ROBOT_SPEED + OVERHEAD_TIME
     #     return travel_time
 
@@ -65,7 +93,12 @@ class BugMover:
     #     Calculate the Pose that is the specified distance from p1 to p2.
 
     #     The orientation is not calculated, it's taken directly from p2.
+    #     The orientation is not calculated, it's taken directly from p2.
 
+    #     Args:
+    #     p2 (Pose): The pose you want to step towards.
+    #     p1 (Pose): The pose you want to step from. Defaults to current ee_pose
+    #     max_step (float): Maximum step size (in meters) to take from p1 to p2. Defaults to 0.1 m.
     #     Args:
     #     p2 (Pose): The pose you want to step towards.
     #     p1 (Pose): The pose you want to step from. Defaults to current ee_pose
@@ -74,7 +107,13 @@ class BugMover:
     #     Returns
     #     -------
     #     step_pose (Pose): The pose that's a single step from p1 to p2, with the orientation of p2
+    #     Returns
+    #     -------
+    #     step_pose (Pose): The pose that's a single step from p1 to p2, with the orientation of p2
 
+    #     """
+    #     if type(p1) is None:
+    #         p1 = self.node.mpi.rs.get_ee_pose(want_stamp=True).pose
     #     """
     #     if type(p1) is None:
     #         p1 = self.node.mpi.rs.get_ee_pose(want_stamp=True).pose
@@ -92,26 +131,6 @@ class BugMover:
     #         step_point = Point(x=step_vec[0], y=step_vec[1], z=step_vec[2])
     #         step_pose.position = step_point
     #     return step_pose
-
-    # def _distance_scaler(self, p2: Pose, p1: Pose, max_step: float = 0.1):
-    #     """
-    #     Calculate the Pose that is the specified distance from p1 to p2.
-
-    #     The orientation is not calculated, it's taken directly from p2.
-
-    #     Args:
-    #     p2 (Pose): The pose you want to step towards.
-    #     p1 (Pose): The pose you want to step from. Defaults to current ee_pose
-    #     max_step (float): Maximum step size (in meters) to take from p1 to p2. Defaults to 0.1 m.
-
-    #     Returns
-    #     -------
-    #     step_pose (Pose): The pose that's a single step from p1 to p2, with the orientation of p2
-
-    #     """
-    #     if type(p1) is None:
-    #         p1 = self.node.mpi.rs.get_ee_pose(want_stamp=True).pose
-
     #     # Check distance and scale the step if dist > max_step
     #     dist_to_bug = self._calc_distance(bug.pose.pose, self.node.mpi.rs.get_ee_pose())
     #     if dist_to_bug <= max_step:
@@ -180,9 +199,11 @@ class BugMover:
 
         # While more than 1 cm away, keep moving towards the bug
         dist_to_bug = mv._calc_distance(bug.pose.pose, self.node.mpi.rs.get_ee_pose())
+        dist_to_bug = mv._calc_distance(bug.pose.pose, self.node.mpi.rs.get_ee_pose())
         success = True
         if not wrist_cam:
             while dist_to_bug >= 0.01 and success is True:
+                step_pose = mv._distance_scaler(
                 step_pose = mv._distance_scaler(
                     p1=self.node.mpi.rs.get_ee_pose(), p2=bug.pose.pose
                 )
@@ -190,6 +211,7 @@ class BugMover:
         # TMP TODO: Add section for checking wrist camera
         elif wrist_cam:
             while dist_to_bug >= 0.01 and success is True:
+                step_pose = mv._distance_scaler(
                 step_pose = mv._distance_scaler(
                     p1=self.node.mpi.rs.get_ee_pose(), p2=bug.pose.pose
                 )
@@ -234,6 +256,7 @@ class BugMover:
 
             # Calculate metrics
             dist_bug_to_goal = mv._calc_distance(bug_pose_msg.position, bridge_end_pose.position)
+            dist_bug_to_goal = mv._calc_distance(bug_pose_msg.position, bridge_end_pose.position)
 
             # --- CONDITIONS ---
             # 1. Is the bug on the bridge? (Passed the Y threshold?)
@@ -255,6 +278,7 @@ class BugMover:
                 ambush_pose.position.z = bridge_end_pose.position.z + self.GRIPPER_OFFSET_Z
                 ambush_pose.orientation = bridge_end_pose.orientation
 
+                t_robot = mv._calc_travel_time(current_robot_pose, ambush_pose)
                 t_robot = mv._calc_travel_time(current_robot_pose, ambush_pose)
 
                 # 4. Time Race: Can we beat the bug?
@@ -295,6 +319,7 @@ class BugMover:
 
         while rclpy.ok() and wait_counter < max_wait_cycles:
             curr_bug = self.node.current_bug.pose.position
+            dist = mv._calc_distance(curr_bug, bridge_end_pose.position)
             dist = mv._calc_distance(curr_bug, bridge_end_pose.position)
 
             if dist < self.TRAP_TRIGGER_DISTANCE:
