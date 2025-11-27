@@ -93,38 +93,38 @@ class BugMover:
     #         step_pose.position = step_point
     #     return step_pose
 
-    def _distance_scaler(self, p2: Pose, p1: Pose | None = None, max_step: float = 0.1):
-        """
-        Calculate the Pose that is the specified distance from p1 to p2.
+    # def _distance_scaler(self, p2: Pose, p1: Pose, max_step: float = 0.1):
+    #     """
+    #     Calculate the Pose that is the specified distance from p1 to p2.
 
-        The orientation is not calculated, it's taken directly from p2.
+    #     The orientation is not calculated, it's taken directly from p2.
 
-        Args:
-        p2 (Pose): The pose you want to step towards.
-        p1 (Pose): The pose you want to step from. Defaults to current ee_pose
-        max_step (float): Maximum step size (in meters) to take from p1 to p2. Defaults to 0.1 m.
+    #     Args:
+    #     p2 (Pose): The pose you want to step towards.
+    #     p1 (Pose): The pose you want to step from. Defaults to current ee_pose
+    #     max_step (float): Maximum step size (in meters) to take from p1 to p2. Defaults to 0.1 m.
 
-        Returns
-        -------
-        step_pose (Pose): The pose that is a single step from p1 to p2, with the orientation of p2
+    #     Returns
+    #     -------
+    #     step_pose (Pose): The pose that's a single step from p1 to p2, with the orientation of p2
 
-        """
-        if type(p1) is None:
-            p1 = self.node.mpi.rs.get_ee_pose(want_stamp=True).pose
+    #     """
+    #     if type(p1) is None:
+    #         p1 = self.node.mpi.rs.get_ee_pose(want_stamp=True).pose
 
-        # Check distance and scale the step if dist > max_step
-        dist_to_bug = self._calc_distance(bug.pose.pose, self.node.mpi.rs.get_ee_pose())
-        if dist_to_bug <= max_step:
-            step_pose = p2  # TMP TODO: Check how to copy the pose
-        else:
-            scale_factor = dist_to_bug / max_step
-            step_pose = Pose(orientation=p2.orientation)
-            p1_vec = [p1.position.x, p1.position.y, p1.position.z]
-            p2_vec = [p2.position.x, p2.position.y, p2.position.z]
-            step_vec = [scale_factor * (x2 - x1) for x1, x2 in zip(p1_vec, p2_vec)]
-            step_point = Point(x=step_vec[0], y=step_vec[1], z=step_vec[2])
-            step_pose.position = step_point
-        return step_pose
+    #     # Check distance and scale the step if dist > max_step
+    #     dist_to_bug = self._calc_distance(bug.pose.pose, self.node.mpi.rs.get_ee_pose())
+    #     if dist_to_bug <= max_step:
+    #         step_pose = p2  # TMP TODO: Check how to copy the pose
+    #     else:
+    #         scale_factor = dist_to_bug / max_step
+    #         step_pose = Pose(orientation=p2.orientation)
+    #         p1_vec = [p1.position.x, p1.position.y, p1.position.z]
+    #         p2_vec = [p2.position.x, p2.position.y, p2.position.z]
+    #         step_vec = [scale_factor * (x2 - x1) for x1, x2 in zip(p1_vec, p2_vec)]
+    #         step_point = Point(x=step_vec[0], y=step_vec[1], z=step_vec[2])
+    #         step_pose.position = step_point
+    #     return step_pose
 
     # -----------------------------------------------------------------
     # Public Functions
