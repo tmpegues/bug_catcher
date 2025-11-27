@@ -20,6 +20,7 @@ from rclpy.node import Node
 
 
 class PickNode(Node):
+
     def __init__(self):
         """Initialize the PickNode."""
         super().__init__('pick_node')
