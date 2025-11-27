@@ -148,10 +148,22 @@ class BugMover:
         # While more than 1 cm away, keep moving towards the bug
         dist_to_bug = self._calc_distance(bug.pose.pose, self.node.mpi.rs.get_ee_pose())
         success = True
-        while dist_to_bug >= 0.01 and success is True:
-            step_pose = self._distance_scaler(p1=self.node.mpi.rs.get_ee_pose(), p2=bug.pose.pose)
-            success = self.node.mpi.GoTo(step_pose, cart_only=True)
+        if not wrist_cam:
+            while dist_to_bug >= 0.01 and success is True:
+                step_pose = self._distance_scaler(
+                    p1=self.node.mpi.rs.get_ee_pose(), p2=bug.pose.pose
+                )
+                success = self.node.mpi.GoTo(step_pose, cart_only=True)
         # TMP TODO: Add section for checking wrist camera
+        elif wrist_cam:
+            while dist_to_bug >= 0.01 and success is True:
+                step_pose = self._distance_scaler(
+                    p1=self.node.mpi.rs.get_ee_pose(), p2=bug.pose.pose
+                )
+                success = self.node.mpi.GoTo(step_pose, cart_only=True)
+                # TMP TODO: Once we incorporate a wrist cam, figure out how to spcifically check
+                # images from it instead of Bug God
+
         if success is False:
             self.node.get_logger().info('Stalking pick has failed')
         else:
