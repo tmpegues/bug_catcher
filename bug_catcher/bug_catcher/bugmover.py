@@ -11,7 +11,6 @@ import numpy as np
 
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
-from rclpy.duration import Duration
 from rclpy.node import Node
 
 
@@ -32,7 +31,19 @@ class BugMover:
     # Internal Helper Functions
     # -----------------------------------------------------------------
     def _calc_distance(self, p1: Point | Pose, p2: Point | Pose):
-        """Calculate the Euclidean distance between two points or poses."""
+        """
+        Calculate the Euclidean distance between two points or poses.
+
+        Args:
+        ----
+        p1 (Point | Pose): the initial position to calculate distance from
+        p1 (Point | Pose): the final position to calculate distance to
+
+        Returns
+        -------
+        (float) the Euclidian distance between the Points or Poses
+
+        """
         if type(p1) is Pose:
             p1 = p1.position
         if type(p2) is Pose:
@@ -48,6 +59,39 @@ class BugMover:
 
         travel_time = distance / ROBOT_SPEED + OVERHEAD_TIME
         return travel_time
+
+    def _distance_scaler(self, p2: Pose, p1: Pose | None = None, max_step: float = 0.1):
+        """
+        Calculate the Pose that is the specified distance from p1 to p2.
+
+        The orientation is not calculated, it's taken directly from p2.
+
+        Args:
+        p2 (Pose): The pose you want to step towards.
+        p1 (Pose): The pose you want to step from. Defaults to current ee_pose
+        max_step (float): Maximum step size (in meters) to take from p1 to p2. Defaults to 0.1 m.
+
+        Returns
+        -------
+        step_pose (Pose): The pose that is a single step from p1 to p2, with the orientation of p2
+
+        """
+        if type(p1) is None:
+            p1 = self.node.mpi.rs.get_ee_pose(want_stamp=True).pose
+
+        # Check distance and scale the step if dist > max_step
+        dist_to_bug = self._calc_distance(bug.pose.pose, self.node.mpi.rs.get_ee_pose())
+        if dist_to_bug <= max_step:
+            step_pose = p2  # TMP TODO: Check how to copy the pose
+        else:
+            scale_factor = dist_to_bug / max_step
+            step_pose = Pose(orientation=p2.orientation)
+            p1_vec = [p1.position.x, p1.position.y, p1.position.z]
+            p2_vec = [p2.position.x, p2.position.y, p2.position.z]
+            step_vec = [scale_factor * (x2 - x1) for x1, x2 in zip(p1_vec, p2_vec)]
+            step_point = Point(x=step_vec[0], y=step_vec[1], z=step_vec[2])
+            step_pose.position = step_point
+        return step_pose
 
     # -----------------------------------------------------------------
     # Public Functions
@@ -75,29 +119,43 @@ class BugMover:
         success (bool): True if the robot gripper thinks it grasped an object
 
         """
-        started_tracking = False
-        pounce = False
-        # 1. Get trajectory to the bug
-        bug_pose = Pose()  # TODO: update this pose
-        # TODO: This tracker here should either ignore the fingers or directly set them every loop
-        tracking = self.node.mpi.GoTo(bug_pose)
+        # started_tracking = False
+        # pounce = False
+        # # 1. Get trajectory to the bug
+        # bug_pose = Pose()  # TODO: update this pose
+        # # TODO: This tracker should either ignore the fingers or directly set them every loop
+        # tracking = self.node.mpi.GoTo(bug_pose)
 
-        if not tracking:
-            # Retry once or twice or something like that?
-            started_tracking = False
-            pass
+        # if not tracking:
+        #     # Retry once or twice or something like that?
+        #     started_tracking = False
+        #     pass
+        # else:
+        #     # wait half a second and make sure tracking is is good the whole time
+        #     if not started_tracking:
+        #         start_time = self.node.get_clock().now()
+        #         started_tracking = True
+        #     # Track for 0.5 seconds, then flip the switch to pounce
+        #     if self.node.get_clock().now() - start_time >= Duration(nanosec=5 * 10**8):
+        #         pounce = True
+        #         pass
+        #     if pounce:
+        #         success = self.node.mpi.CloseGripper
+        #         # TMP TODO: break the continuous tracking
+
+        # return success
+
+        # While more than 1 cm away, keep moving towards the bug
+        dist_to_bug = self._calc_distance(bug.pose.pose, self.node.mpi.rs.get_ee_pose())
+        success = True
+        while dist_to_bug >= 0.01 and success is True:
+            step_pose = self._distance_scaler(p1=self.node.mpi.rs.get_ee_pose(), p2=bug.pose.pose)
+            success = self.node.mpi.GoTo(step_pose, cart_only=True)
+        # TMP TODO: Add section for checking wrist camera
+        if success is False:
+            self.node.get_logger().info('Stalking pick has failed')
         else:
-            # wait half a second and make sure tracking is is good the whole time
-            if not started_tracking:
-                start_time = self.node.get_clock().now()
-                started_tracking = True
-            # Track for 0.5 seconds, then flip the switch to pounce
-            if self.node.get_clock().now() - start_time >= Duration(nanosec=5 * 10**8):
-                pounce = True
-                pass
-            if pounce:
-                success = self.node.mpi.CloseGripper
-                # TMP TODO: break the continuous tracking
+            success = self.node.mpi.CloseGripper()
 
         return success
 

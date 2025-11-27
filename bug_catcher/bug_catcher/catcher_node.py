@@ -15,20 +15,8 @@ class CatcherNode(Node):
         """Initialize the Catcher, connecting to the two camera nodes as needed."""
         super().__init__('catcher_node')
 
-        # # SERVICES:
-        # self.pick_service = self.create_service(
-        #     Pick, '/pick', self.pick_callback, callback_group=MutuallyExclusiveCallbackGroup()
-        # )
-
-        # # Declare the filename from the launchfile:
-        # self.declare_parameter('file', 'objects.yaml')
-        # filename = self.get_parameter('file').value
-
         # Initialize the MotionPlanningInterface:
         self.mpi = MotionPlanningInterface(self)
-
-        # # Load the Scene at Init:
-        # self.mpi.ps.load_scene(filename)
 
         self.setup_aruco()
         self.setup_bug_color()
@@ -112,54 +100,9 @@ class CatcherNode(Node):
 
         return self.bug_list[best_bug_id]
 
-    # # Call the gripper to go pick up the object:
-    # async def pick_callback(self, request, response):
-    #     """Commands the gripper to go retrieve and move the object."""
-    #     self.get_logger().info(f'Received pick {request.name}')
-    #     # Flip this value to turn off all downstream plans and executions.
-    #     response.success = True
-
-    #     # Initialize the robot at the Home Position:
-    #     response.success = await self.mpi.GetReady()
-
-    #     # Begin the Commands to retrieve the objext:
-    #     # Move the arm directly above the object:
-    #     if response.success:
-    #         await self.mpi.MoveAboveObject(request.name)
-
-    #     # Opens the gripper
-    #     if response.success:
-    #         response.success = await self.mpi.OpenGripper()
-
-    #     # Moves directly downwards until the object is between the grippers
-    #     if response.success:
-    #         response.success = await self.mpi.MoveDownToObject(request.name)
-
-    #     # Closes the grippers
-    #     if response.success:
-    #         response.success = await self.mpi.CloseGripper(request.name)
-
-    #     # Lifts the object slightly off the table
-    #     if response.success:
-    #         response.success = await self.mpi.LiftOffTable()
-
-    #     # Moves the object to the other side of the obstacle
-    #     if response.success:
-    #         response.success = await self.mpi.MoveToGoal()
-
-    #     # Releases the object and detaches the rectangle
-    #     if response.success:
-    #         response.success = await self.mpi.ReleaseObject(request.name)
-
-    #     # Return the robot to the Home Position:
-    #     if response.success:
-    #         response.success = await self.mpi.GetReady()
-
-    #     return response
-
 
 def main(args=None):
-    """Entry point for the Pick Node."""
+    """Entry point for the Catcher Node."""
     rclpy.init(args=args)
     catcher_node = CatcherNode()
     rclpy.spin(catcher_node)

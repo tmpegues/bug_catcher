@@ -47,6 +47,7 @@ setup(
     entry_points={
         'console_scripts': [
             'catcher_node = bug_catcher.catcher_node:main',
+            'pick_node = bug_catcher.pick_node:main',
         ],
     },
 )
