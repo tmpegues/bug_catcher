@@ -23,6 +23,7 @@ def generate_test_description():
 
 
 class TestFrankaMove(unittest.TestCase):
+
     @classmethod
     def setUpClass(cls):
         rclpy.init()

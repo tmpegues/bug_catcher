@@ -200,17 +200,7 @@ class BugMover:
         if success is False:
             self.node.get_logger().info('Stalking pick has failed')
         else:
-            # wait half a second and make sure tracking is is good the whole time
-            if not started_tracking:
-                start_time = self.node.get_clock().now()
-                started_tracking = True
-            # Track for 0.5 seconds, then flip the switch to pounce
-            if self.node.get_clock().now() - start_time >= Duration(nanosec=5 * 10**8):
-                pounce = True
-                pass
-            if pounce:
-                success = self.node.mpi.CloseGripper
-                # TMP TODO: break the continuous tracking
+            success = self.node.mpi.CloseGripper()
 
         return success
 
