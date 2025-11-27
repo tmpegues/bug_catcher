@@ -46,7 +46,7 @@ setup(
     entry_points={
         'console_scripts': [
             'pick_node = bug_catcher.pick_node:main',
-            'calibration_node = bug_catcher.Calibration_TargetPublisher:main'
+            'calibration_node = bug_catcher.Calibration_TargetPublisher:main',
             'camera = bug_catcher.camera:main',
         ],
     },
