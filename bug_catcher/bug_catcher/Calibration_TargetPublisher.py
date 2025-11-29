@@ -210,7 +210,7 @@ class CalibrationNode(rclpy.node.Node):
         # Establish Calibration Averaging Variables:
         self.calibration_done = False
         self.calibration_frames = []
-        self.max_calibration_frames = 150    # Average over 150 frames (5 seconds)
+        self.max_calibration_frames = 30    # Average over 150 frames (5 seconds)
 
         # Translate Y-coordinate to match ROS REP-103 frame as OpenCV has a flipped y orientation.
         # X_ros =  Z_cv, Y_ros = -X_cv, Z_ros = -Y_cv
