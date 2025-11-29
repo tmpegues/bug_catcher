@@ -106,7 +106,9 @@ class CalibrationNode(rclpy.node.Node):
         self.declare_parameter('calibration.tags.tag_4.y', -0.4572)
 
         # Read and set the values of each parameter:
-        self.marker_size = (self.get_parameter('marker_size').get_parameter_value().double_value)
+        self.marker_size = (
+            self.get_parameter('marker_size').get_parameter_value().double_value
+        )
         dictionary_id_name = (
             self.get_parameter('aruco_dictionary_id').get_parameter_value().string_value
         )
@@ -208,7 +210,12 @@ class CalibrationNode(rclpy.node.Node):
         # Establish Calibration Averaging Variables:
         self.calibration_done = False
         self.calibration_frames = []
-        self.max_calibration_frames = 10  # Average over 10 frames
+        self.max_calibration_frames = 150    # Average over 150 frames (5 seconds)
+
+        # Translate Y-coordinate to match ROS REP-103 frame as OpenCV has a flipped y orientation.
+        # X_ros =  Z_cv, Y_ros = -X_cv, Z_ros = -Y_cv
+        self.Tcv_to_ros = np.array([[0, 0, 1, 0], [-1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 0, 1]])
+
     # ################################### End_Citation[NK1] ##############################
 
     def camera_info_callback(self, info_msg):
@@ -300,12 +307,16 @@ class CalibrationNode(rclpy.node.Node):
                 markers.poses[i].position.y,
                 markers.poses[i].position.z,
             ]).reshape(3, 1)
-            cam_matrix = np.eye(4)
-            cam_matrix[:3, :3] = cam_rot
-            cam_matrix[:3, 3] = cam_trans.flatten()
 
-            # Invert the tf:
-            mark_cam_matrix = self.invert_tf(cam_matrix)
+            # Rotate OpenCv interpretation to ROS:
+            R_ros = self.Tcv_to_ros[:3, :3] @  cam_rot
+            t_ros = self.Tcv_to_ros[:3, :3] @ cam_trans
+            # Invert to get Tmarker->camera:
+            cam_mark_matrix = np.eye(4)
+            cam_mark_matrix[:3, :3] = R_ros
+            cam_mark_matrix[:3, 3:4] = t_ros
+            mark_cam_matrix = self.invert_tf(cam_mark_matrix)
+            # Add identified frame in Ros orientation:
             marker_camera_tf[markers.marker_ids[i]] = mark_cam_matrix
 
             # Listen and store the tf of base_marker seen by camera:
@@ -450,6 +461,8 @@ class CalibrationNode(rclpy.node.Node):
                     self.static_broadcaster.sendTransform(msg)
                     self.calibration_done = True
                     self.get_logger().info('Static calibration complete.')
+                    # Now calibrated, so destroy subscription:
+                    self.destroy_subscription(self.image_sub)
 
 
 def main():
