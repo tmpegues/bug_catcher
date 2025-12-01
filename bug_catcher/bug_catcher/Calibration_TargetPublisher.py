@@ -47,7 +47,6 @@ from tf2_ros.buffer import Buffer
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 from tf2_ros.transform_listener import TransformListener
 from tf_transformations import quaternion_from_matrix
-from std_msgs.msg import Bool
 
 
 class CalibrationNode(rclpy.node.Node):
@@ -155,12 +154,8 @@ class CalibrationNode(rclpy.node.Node):
         # PUBLISHERS:
         # Aruco marker publisher: (ID,Pose)
         self.markers_pub = self.create_publisher(ArucoMarkers, 'aruco_markers', 10)
-        # Aruco marker positions publisher: (PoseArray)
+        # Aruco marker positions publisher: (Pose)
         self.poses_pub = self.create_publisher(PoseArray, 'aruco_poses', 10)
-        # Calibration status publisher (Bool)
-        self.calibrate_pub = self.create_publisher(Bool, 'calibrate', 10)
-        # Calibration of the ROI Target Pose (Pose)
-        self.target_pub = self.create_publisher(Pose, 'roi_pose', 10)
 
         # Listeners:
         # The buffer stores received tf frames:
@@ -215,7 +210,7 @@ class CalibrationNode(rclpy.node.Node):
         # Establish Calibration Averaging Variables:
         self.calibration_done = False
         self.calibration_frames = []
-        self.max_calibration_frames = 90    # Average over 150 frames (5 seconds)
+        self.max_calibration_frames = 150    # Average over 150 frames (5 seconds)
 
         # Translate Y-coordinate to match ROS REP-103 frame as OpenCV has a flipped y orientation.
         # X_ros =  Z_cv, Y_ros = -X_cv, Z_ros = -Y_cv
@@ -408,7 +403,6 @@ class CalibrationNode(rclpy.node.Node):
                 if int(marker_id) > max_marker_id:
                     self.get_logger().warn(f'Ignoring unknown marker ID {marker_id}')
                     continue
-                    
                 # Set the position of each marker:
                 pose = Pose()
                 pose.position.x = float(tvecs[i][0][0])
@@ -424,14 +418,9 @@ class CalibrationNode(rclpy.node.Node):
                 pose.orientation.z = quat[2]
                 pose.orientation.w = quat[3]
 
-                # If marker_id 5 is registered, publish its pose to the color filter target:
-                if marker_id == 5:
-                    self.target_pub.publish(pose)
-                else:
-                    # Don't include Marker 5 in the calibration:
-                    pose_array.poses.append(pose)
-                    markers.poses.append(pose)
-                    markers.marker_ids.append(marker_id[0])
+                pose_array.poses.append(pose)
+                markers.poses.append(pose)
+                markers.marker_ids.append(marker_id[0])
 
             # Publish the markers to the topic:
             self.poses_pub.publish(pose_array)
@@ -474,11 +463,6 @@ class CalibrationNode(rclpy.node.Node):
                     self.get_logger().info('Static calibration complete.')
                     # Now calibrated, so destroy subscription:
                     self.destroy_subscription(self.image_sub)
-
-                    # Publish that the camera is calibrated to the base frame:
-                    msg = Bool()
-                    msg.data = True
-                    self.calibrate_pub.publish(msg)
 
 
 def main():

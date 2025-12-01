@@ -18,6 +18,10 @@ def recursive_files(prefix, path):
         (str(Path(prefix) / subdir), [str(file) for file in subdir.glob('*') if not file.is_dir()])
         for subdir in Path(path).glob('**')
     ]
+    return [
+        (str(Path(prefix) / subdir), [str(file) for file in subdir.glob('*') if not file.is_dir()])
+        for subdir in Path(path).glob('**')
+    ]
 
 
 package_name = 'bug_catcher'
