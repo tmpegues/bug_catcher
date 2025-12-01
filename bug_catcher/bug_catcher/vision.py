@@ -6,15 +6,11 @@ using the SORT tracker.
 """
 
 from pathlib import Path
-
 from ament_index_python.packages import get_package_share_directory
-
 from bug_catcher.sort import Sort
 
 import cv2
-
 import numpy as np
-
 import yaml
 
 
@@ -110,7 +106,7 @@ class Vision:
         frame_after_mask_except_ROI[50:200, 50:200] = [0, 0, 0]
         return frame_after_mask_except_ROI, frame_threshold
 
-    def detect_input_and_switch_filter(self, frame):
+    def detect_input_and_switch_filter(self, frame, target_pixel=None, roi_size=20):
         """
         Switch the color based on the HSV value in the input region of interest.
 
@@ -124,7 +120,17 @@ class Vision:
         None
 
         """
-        color = frame[50:200, 50:200]
+        if target_pixel is not None:
+            u_target, v_target = target_pixel
+        # Determine the size of the target square for color identification:
+        half_size = roi_size // 2
+        x_min = max(u_target - half_size, 0)
+        x_max = min(u_target + half_size, frame.shape[1])
+        y_min = max(v_target - half_size, 0)
+        y_max = min(v_target + half_size, frame.shape[0])
+
+        color = frame[y_min:y_max, x_min:x_max]
+        # color = frame[50:200, 50:200]
         hsv_color = cv2.cvtColor(color, cv2.COLOR_BGR2HSV)
 
         if np.any(cv2.inRange(hsv_color, self.blue_low_hsv, self.blue_high_hsv)):
@@ -262,14 +268,16 @@ class Vision:
             Center of the tracked object in the camera coordinate frame (pixels)
 
         """
-        center = None
+        centers = []
         for x1, y1, x2, y2, track_id in tracked:
             if np.isnan(x1) or np.isnan(y1) or np.isnan(x2) or np.isnan(y2):
                 continue
+
             x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
             cx = (x1 + x2) // 2
             cy = (y1 + y2) // 2
-            center = (cx, cy)
+
+            centers.append((cx, cy))   # store center for each bug
 
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
             cv2.circle(frame, (cx, cy), 4, (0, 255, 0), -1)
@@ -282,7 +290,7 @@ class Vision:
                 (0, 255, 0),
                 2,
             )
-        if center is not None:
-            return center
+
+        return centers        # return list of centers
 
     # #################### End_Citation [13] ##################

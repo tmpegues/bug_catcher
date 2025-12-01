@@ -8,12 +8,15 @@
   <maintainer email="MiguelP@u.northwestern.edu">Miguel Pegues</maintainer>
   <license>MIT</license>
 
+  <build_depend>python3-scikit-image</build_depend>
+
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-robotstate.py</exec_depend>
   <exec_depend>python3-planningscene.py</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>xacro</exec_depend>
   <exec_depend>turtle_brick_interfaces</exec_depend>
+  <exec_depend>python3-scikit-image</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

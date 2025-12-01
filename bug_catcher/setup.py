@@ -32,7 +32,12 @@ setup(
         *recursive_files('share/' + package_name, 'launch'),
         *recursive_files('share/' + package_name, 'config'),
     ],
-    install_requires=['setuptools'],
+    install_requires=[
+        'setuptools',
+        'scikit-image',
+        'numpy',
+        'opencv-python',
+    ],
     zip_safe=True,
     maintainer='Miguel Pegues',
     maintainer_email='MiguelP@u.northwestern.edu',
@@ -49,7 +54,7 @@ setup(
             'catcher_node = bug_catcher.catcher_node:main',
             'pick_node = bug_catcher.pick_node:main',
             'calibration_node = bug_catcher.Calibration_TargetPublisher:main',
-            'camera = bug_catcher.camera:main',
+            'color_detection_node = bug_catcher.ColorDetection:main',
         ],
     },
 )
