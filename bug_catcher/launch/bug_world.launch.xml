@@ -9,7 +9,10 @@
 
     <!--Launch the Realsense Camera Node-->
     <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py">
-        <arg name="depth_module.profile" value="1280x720x30"/>
+        <!-- Depth stream: 1280x720 at 15 Hz -->
+        <arg name="depth_module.profile" value="1280x720x15"/>
+        <!-- Color stream: 1280x720 at 15 Hz -->
+        <arg name="color_module.profile" value="1280x720x15"/>
         <arg name="pointcloud.enable" value="true"/>
     </include>
 
@@ -19,6 +22,12 @@
         <remap from="image_rect" to="/camera/camera/color/image_raw"/>
         <remap from="camera_info" to="/camera/camera/color/camera_info"/>
         <param from = "$(find-pkg-share apriltag_ros)/cfg/tags_16h5.yaml"/>
+    </node>
+
+   <!--Load the planning scene and await action service call-->
+    <node pkg="bug_catcher" exec="calibration_node">
+        <!-- Load AprilTag tag family -->
+        <param name="filename" value="$(find-pkg-share bug_catcher)/config/calibration_parameters.yaml"/>
     </node>
 
     <!--Load the planning scene and await action service call-->
