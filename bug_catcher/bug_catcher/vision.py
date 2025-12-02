@@ -114,6 +114,7 @@ class Vision:
         -------
         detections (np.ndarray): Array of detections [x1, y1, x2, y2, score] for SORT.
         display_frame (np.ndarray): A copy of the frame with raw detection boxes drawn.
+        mask (np.ndarray): The binary mask used for detection.
 
         """
         mask = self.get_mask(frame, color_name)
@@ -126,7 +127,14 @@ class Vision:
             blank_mask = np.zeros((h, w), dtype=np.uint8)
             return [], display_frame, blank_mask
 
-        # Find external contours only (excludes nested contours)
+        # Handle case where color is not found
+        if mask is None:
+            # Return empty detections, original frame, and a blank mask
+            h, w = frame.shape[:2]
+            blank_mask = np.zeros((h, w), dtype=np.uint8)
+            return [], frame, blank_mask
+
+        # Find external contours
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         if not contours:
