@@ -7,7 +7,8 @@ based on color masking, tracking objects using the SORT algorithm, and projectin
 
 Publishers
 ----------
-+ processed_image (sensor_msgs.msg.Image): Publishes debug visualization frames.
++ target_image (sensor_msgs.msg.Image): Publishes debug visualization frames (RGB).
++ mask_image (sensor_msgs.msg.Image): Publishes the binary mask (Black/White).
 + bug_poses (geometry_msgs.msg.PoseArray): Publishes 3D poses of tracked bugs.
 
 Subscribers
@@ -35,6 +36,7 @@ import cv2
 from cv_bridge import CvBridge, CvBridgeError
 
 from geometry_msgs.msg import Pose, PoseArray
+
 import numpy as np
 
 import rclpy
@@ -95,7 +97,8 @@ class ColorDetection(Node):
         )
 
         # Publishers
-        self.vis_pub = self.create_publisher(Image, 'processed_image', 10)
+        self.vis_pub = self.create_publisher(Image, 'target_image', 10)
+        self.mask_pub = self.create_publisher(Image, 'mask_image', 10)
         self.pose_pub = self.create_publisher(PoseArray, 'bug_poses', 10)
 
         self.get_logger().info(f'Node started. Current Target: [{self.target_color}]')
@@ -151,14 +154,14 @@ class ColorDetection(Node):
             self.get_logger().error(f'CV Bridge Error: {e}')
             return
 
-        # 1. Vision Processing (Detection & Tracking)
-        # detect_objects returns bounding boxes and a frame with debug drawings
-        detections, debug_frame = self.vision.detect_objects(frame, self.target_color)
+        # 1. Vision Processing
+        # Unpack the mask as well (detections, debug_frame, mask)
+        detections, debug_frame, mask = self.vision.detect_objects(frame, self.target_color)
 
-        # Update SORT tracker to get persistent IDs
+        # Update SORT tracker
         tracked_results, final_frame = self.vision.update_tracker(detections, debug_frame)
 
-        # Annotate target on screen
+        # Annotate target
         cv2.putText(
             final_frame,
             f'TARGET: {self.target_color.upper()}',
@@ -169,7 +172,7 @@ class ColorDetection(Node):
             2,
         )
 
-        # 2. Coordinate Conversion (Pixel -> Camera Frame)
+        # 2. Coordinate Conversion
         bug_poses = PoseArray()
         bug_poses.header = msg.header
 
@@ -177,14 +180,10 @@ class ColorDetection(Node):
         fy = self.intrinsics[1, 1]
         cx = self.intrinsics[0, 2]
         cy = self.intrinsics[1, 2]
-
-        # Z is assumed constant based on camera height
         Z = self.camera_height
 
-        # Process tracked objects
         if len(tracked_results) > 0:
             for obj_id, u, v in tracked_results:
-                # Pinhole Camera Model Projection
                 X = (u - cx) * Z / fx
                 Y = (v - cy) * Z / fy
 
@@ -192,16 +191,20 @@ class ColorDetection(Node):
                 pose.position.x = float(X)
                 pose.position.y = float(Y)
                 pose.position.z = float(Z)
-                # Orientation is standard identity
                 pose.orientation.w = 1.0
-
                 bug_poses.poses.append(pose)
 
-            # Publish poses
             self.pose_pub.publish(bug_poses)
 
-        # 3. Publish Visualization
+        # 3. Publish Visualizations
+        # Publish the RGB debug image
         self.vis_pub.publish(self.bridge.cv2_to_imgmsg(final_frame, encoding='bgr8'))
+
+        # Publish the Binary Mask (use 'mono8' for grayscale/binary)
+        if mask is not None:
+            mask_msg = self.bridge.cv2_to_imgmsg(mask, encoding='mono8')
+            mask_msg.header = msg.header
+            self.mask_pub.publish(mask_msg)
 
 
 def main(args=None):

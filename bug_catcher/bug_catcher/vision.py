@@ -124,13 +124,19 @@ class Vision:
         -------
         detections (np.ndarray): Array of detections [x1, y1, x2, y2, score] for SORT.
         display_frame (np.ndarray): A copy of the frame with raw detection boxes drawn.
+        mask (np.ndarray): The binary mask used for detection.
 
         """
         mask = self.get_mask(frame, color_name)
-        if mask is None:
-            return [], frame
 
-        # Find external contours only (excludes nested contours)
+        # Handle case where color is not found
+        if mask is None:
+            # Return empty detections, original frame, and a blank mask
+            h, w = frame.shape[:2]
+            blank_mask = np.zeros((h, w), dtype=np.uint8)
+            return [], frame, blank_mask
+
+        # Find external contours
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         detections = []
@@ -144,15 +150,12 @@ class Vision:
                 continue
 
             x, y, w, h = cv2.boundingRect(cnt)
-
-            # Format: [x1, y1, x2, y2, score]
-            # Score is set to 1.0 as we are treating thresholding as absolute
             detections.append([x, y, x + w, y + h, 1.0])
 
-            # Draw raw detection bounding box (Red) for debugging
-            cv2.rectangle(display_frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
+            # Draw raw detection bounding box
+            cv2.drawContours(display_frame, [cnt], -1, (0, 0, 255), 2)
 
-        return np.array(detections), display_frame
+        return np.array(detections), display_frame, mask
 
     def update_tracker(self, detections, frame):
         """
