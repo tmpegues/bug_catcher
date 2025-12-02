@@ -119,14 +119,14 @@ class CalibrationNode(rclpy.node.Node):
         self.camera_frame = (self.get_parameter('camera_frame').get_parameter_value().string_value)
         # Set the tag parameter values:
         self.tag_params = {
-            1: (self.get_parameter('calibration.tags.tag_2.x').value,
-                self.get_parameter('calibration.tags.tag_2.y').value),
-            2: (self.get_parameter('calibration.tags.tag_3.x').value,
-                self.get_parameter('calibration.tags.tag_3.y').value),
-            3: (self.get_parameter('calibration.tags.tag_4.x').value,
-                self.get_parameter('calibration.tags.tag_4.y').value),
-            4: (self.get_parameter('calibration.tags.tag_1.x').value,
-                self.get_parameter('calibration.tags.tag_1.y').value),
+            1: (self.get_parameter('calibration.tags.tag_2.x').get_parameter_value().double_value,
+                self.get_parameter('calibration.tags.tag_2.y').get_parameter_value().double_value),
+            2: (self.get_parameter('calibration.tags.tag_3.x').get_parameter_value().double_value,
+                self.get_parameter('calibration.tags.tag_3.y').get_parameter_value().double_value),
+            3: (self.get_parameter('calibration.tags.tag_4.x').get_parameter_value().double_value,
+                self.get_parameter('calibration.tags.tag_4.y').get_parameter_value().double_value),
+            4: (self.get_parameter('calibration.tags.tag_1.x').get_parameter_value().double_value,
+                self.get_parameter('calibration.tags.tag_1.y').get_parameter_value().double_value),
         }
 
         # Make sure we have a valid dictionary id for Aruco markers:

@@ -2,14 +2,11 @@
 
 from bug_catcher.vision import Vision
 
-import cv2
 from enum import auto, Enum
 
 from cv_bridge import CvBridge
 
-from geometry_msgs.msg import Point
 from geometry_msgs.msg import Pose, PoseArray
-from rcl_interfaces.msg import ParameterDescriptor, ParameterType
 from rclpy.qos import qos_profile_sensor_data
 import numpy as np
 
@@ -47,30 +44,9 @@ class ColorDetection(Node):
         super().__init__('color_detection_node')
 
         # Initializing the camera from config file:
-        self.declare_parameter(
-            name='image_topic',
-            value='/camera/camera/color/image_raw',
-            descriptor=ParameterDescriptor(
-                type=ParameterType.PARAMETER_STRING,
-                description='Image topic to subscribe to.',
-            ),
-        )
-        self.declare_parameter(
-            name='camera_info_topic',
-            value='/camera/camera/color/camera_info',
-            descriptor=ParameterDescriptor(
-                type=ParameterType.PARAMETER_STRING,
-                description='Camera info topic to subscribe to.',
-            ),
-        )
-        self.declare_parameter(
-            name='camera_frame',
-            value='',
-            descriptor=ParameterDescriptor(
-                type=ParameterType.PARAMETER_STRING,
-                description='Camera optical frame to use.',
-            ),
-        )
+        self.declare_parameter(name='image_topic', value='/camera/camera/color/image_raw')
+        self.declare_parameter(name='camera_info_topic', value='/camera/camera/color/camera_info')
+        self.declare_parameter(name='camera_frame', value='')
         # Set the parameter values:
         image_topic = (self.get_parameter('image_topic').get_parameter_value().string_value)
         info_topic = (
