@@ -1,0 +1,23 @@
+launch:
+
+- node_container:
+    pkg: rclcpp_components
+    exec: component_container
+    name: apriltag_container
+    namespace: ""
+
+    composable_node:
+    - pkg: apriltag_ros
+      plugin: AprilTagNode
+      name: apriltag
+      namespace: apriltag
+      remap:
+      - from: /apriltag/image_rect
+        to: /camera/image_rect
+      - from: /camera/camera_info
+        to: /camera/camera/camera_info
+      param:
+      - from: $(find-pkg-share apriltag_ros)/cfg/tags_16h5.yaml
+      extra_arg:
+      - name: use_intra_process_comms
+        value: "True"
