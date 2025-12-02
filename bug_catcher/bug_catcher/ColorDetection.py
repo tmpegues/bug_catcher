@@ -1,273 +1,221 @@
-"""Camera Node."""
+"""
+The script implements the 'color_detection_node' within the 'bug_catcher' package.
 
+It serves as the vision processing unit for the project, performing object detection
+based on color masking, tracking objects using the SORT algorithm, and projecting
+2D pixel coordinates into 3D world coordinates for robotic grasping.
+
+Publishers
+----------
++ processed_image (sensor_msgs.msg.Image): Publishes debug visualization frames.
++ bug_poses (geometry_msgs.msg.PoseArray): Publishes 3D poses of tracked bugs.
+
+Subscribers
+-----------
++ /camera/camera/color/image_raw (sensor_msgs.msg.Image): Receives RGB camera feed.
++ /camera/camera/color/camera_info (sensor_msgs.msg.CameraInfo): Receives camera intrinsics.
++ /target_color (std_msgs.msg.String): Receives commands to switch the detection target.
+
+Parameters
+----------
++ default_color (string, default='red'): The initial color to detect upon startup.
++ camera_height (float, default=0.5): Distance from camera lens to the table surface (meters).
+
+"""
+
+import os
+
+from ament_index_python.packages import get_package_share_directory
+
+from bug_catcher.sort import Sort
 from bug_catcher.vision import Vision
 
-from enum import auto, Enum
+import cv2
 
-from cv_bridge import CvBridge
+from cv_bridge import CvBridge, CvBridgeError
 
 from geometry_msgs.msg import Pose, PoseArray
-from rclpy.qos import qos_profile_sensor_data
 import numpy as np
 
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import CameraInfo
-from sensor_msgs.msg import Image
-from std_msgs.msg import Bool
 
+from sensor_msgs.msg import CameraInfo, Image
 
-class State(Enum):
-    """
-    Current state of the system.
-
-    Determines what the main timer function should be doing on each
-        iteration for the physics of the brick.
-    """
-
-    WAITING = auto()
-    DETECTING = auto()
+from std_msgs.msg import String
 
 
 class ColorDetection(Node):
-    """
-    Color Detection node for the bug catcher.
-
-    This node subscribes to the camera, applies filters from vision.py onto the video
-    frames, publishes the video frame to a camera window and tracks the filtered object.
-    It also pubishes the center of the filtered objects
-
-    """
+    """The Color Detection Node."""
 
     def __init__(self):
-        """Initialize the camera node."""
+        """Initialize the ColorDetection node."""
         super().__init__('color_detection_node')
 
-        # Initializing the camera from config file:
-        self.declare_parameter(name='image_topic', value='/camera/camera/color/image_raw')
-        self.declare_parameter(name='camera_info_topic', value='/camera/camera/color/camera_info')
-        self.declare_parameter(name='camera_frame', value='')
-        # Set the parameter values:
-        image_topic = (self.get_parameter('image_topic').get_parameter_value().string_value)
-        info_topic = (
-            self.get_parameter('camera_info_topic').get_parameter_value().string_value
-        )
-        self.camera_frame = (self.get_parameter('camera_frame').get_parameter_value().string_value)
+        # Parameters
+        self.declare_parameter('default_color', 'red')
+        self.target_color = self.get_parameter('default_color').value
+        self.declare_parameter('camera_height', 0.5)
+        self.camera_height = self.get_parameter('camera_height').value
 
-        # camera number for webcam = 0, can be changed depending on device
-        # self.camera_device_number = 0
-        # self.camera = cv2.VideoCapture(self.camera_device_number)
-
-        # Initializing the cvbridge. cvbrige converts between ROS Image messages and OpenCV images.
-        self.bridge = CvBridge()
-
-        # Timer:
-        self.timer_update = self.create_timer(0.01, self.bug_updater)
-
-        # Publishers:
-        self.camera_publisher = self.create_publisher(Image, 'color_filter_image', 10)
-        self.bug_poses_publisher = self.create_publisher(PoseArray, 'bug_poses', 10)
-
-        # Subscriptions:
-        # Camera_info subscription
-        self.info_sub = self.create_subscription(
-            CameraInfo, info_topic, self.camera_info_callback, qos_profile_sensor_data
-        )
-        # Camera image subscription
-        self.image_sub = self.create_subscription(
-            Image, image_topic, self.image_callback, qos_profile_sensor_data
-        )
-        # Calibration Success Subscription'
-        self.calibrate_sub = self.create_subscription(
-            Bool, 'calibrate', self.calibrate_callback, 10
-        )
-        # Target Color Position for ROI in Color Filtering:
-        self.targetROI_sub = self.create_subscription(Pose, 'roi_pose', self.roi_pose_callback, 10)
-
-        # Initializing Vision class from vision.py
+        # Vision System Setup
         self.vision = Vision()
 
-        # Declare the filename from the launchfile:
-        self.declare_parameter('file', 'bug_color_hsv.yaml')
-        filename = self.get_parameter('file').value
-        self.vision.load_color(filename=filename)
+        pkg_share = get_package_share_directory('bug_catcher')
+        yaml_path = os.path.join(pkg_share, 'config', 'calibrated_colors.yaml')
 
-        # Set up fields for camera parameters
-        self.info_msg = None
-        self.intrinsic_mat = None
-        self.distortion = None
-        # Set up calibration bool:
-        self.calibrated = False
-        # Set the current cv Frame:
-        self.cv_image = None
-        self.image_header = None
-        # Set the target pose for ROI:
-        self.target_pose = None
-        # Set an initial state:
-        self.state = State.WAITING
+        if not os.path.exists(yaml_path):
+            self.get_logger().warn(f'Config not found at {yaml_path}, using local file.')
+            yaml_path = 'calibrated_colors.yaml'
 
-    def camera_info_callback(self, info_msg):
+        try:
+            self.vision.load_calibration(yaml_path)
+            # Verify if the default target color exists in the loaded config
+            if self.target_color not in self.vision.colors:
+                self.get_logger().warn(
+                    f"Default color '{self.target_color}' not found in YAML! "
+                    f'Waiting for command...'
+                )
+        except (FileNotFoundError, ValueError, KeyError, IOError) as e:
+            self.get_logger().error(f'Failed to load calibration: {e}')
+
+        # Utilities
+        self.bridge = CvBridge()
+        self.intrinsics = None
+
+        # Subscribers
+        self.image_sub = self.create_subscription(
+            Image, '/camera/camera/color/image_raw', self.image_cb, 10
+        )
+        self.info_sub = self.create_subscription(
+            CameraInfo, '/camera/camera/color/camera_info', self.info_cb, 10
+        )
+        self.command_sub = self.create_subscription(
+            String, '/target_color', self.command_callback, 10
+        )
+
+        # Publishers
+        self.vis_pub = self.create_publisher(Image, 'processed_image', 10)
+        self.pose_pub = self.create_publisher(PoseArray, 'bug_poses', 10)
+
+        self.get_logger().info(f'Node started. Current Target: [{self.target_color}]')
+
+    # -----------------------------------------------------------------
+    # Callback Functions
+    # -----------------------------------------------------------------
+    def command_callback(self, msg):
         """
-        Retrieve the camera Intrinsics.
+        Handle the callback for target color switching.
 
-        Params:
-        ------
-        info_msg - Camera intrinsic values to be parsed and set for aruco node detection.
-
+        Updates the detection target and resets the SORT tracker to prevent
+        ID conflicts between different colors.
         """
-        self.get_logger().info('Getting Camera Intrinsics...')
-        self.info_msg = info_msg
-        self.intrinsic_mat = np.reshape(np.array(self.info_msg.k), (3, 3))
-        self.distortion = np.array(self.info_msg.d)
-        # Assume that camera parameters will remain the same during simulation and delete:
-        self.destroy_subscription(self.info_sub)
+        new_color = msg.data.lower().strip()
 
-    # def image_callback(self, msg: Image):
-    #     """Convert ros2 msg to opencv image data (np.ndarray)."""
-    #     opencv_img_msg = self.bridge_object.imgmsg_to_cv2(msg)
-
-    #     # display video window
-    #     cv2.imshow('Video', opencv_img_msg)
-    #     cv2.waitKey(1)
-
-    def image_callback(self, img_msg):
-        """
-        Update each frame by publishing the position of the markers.
-
-        This callback will publish an average transform location of the base->camera
-        after 10 successful frames of marker identification.
-
-        Args_
-            img_msg (Image): The image frame that comes from the camera.
-        """
-        if self.info_msg is None:
-            self.get_logger().warn('No camera info has been received!')
+        # If the color hasn't changed, ignore
+        if new_color == self.target_color:
             return
-        # Convert the current frame to cv2:
-        self.cv_image = self.bridge.imgmsg_to_cv2(img_msg, desired_encoding='bgr8')
 
-        # Set image header: 
-        self.image_header = img_msg.header.stamp
+        # Check if the requested color exists in calibration data
+        if new_color in self.vision.colors:
+            self.get_logger().info(f'Switching Target Color: {self.target_color} -> {new_color}')
+            self.target_color = new_color
 
-    def bug_updater(self):
-        """
-        Apply filter on the video frame and track and publish the bug Position.
-
-        This function applies the filters from the Vision class onto the video
-        frame and tracks the center of the bugs. It publishes the video
-        frame and the center of the bugs
-
-        """
-        if self.state == State.WAITING:
-            # Wait to recieve a message from Calibration node that the system is calibrated.
-            if self.calibrated is True:
-                self.state = State.DETECTING
-        elif self.state == State.DETECTING:
-            # # capturing and reading the video frame
-            # success, frame = self.camera.read()
-
-            if self.cv_image is None:
-                self.get_logger().warn('No camera frame has been recieved yet!')
-                return
-
-            # Set the curret frame:
-            frame = self.cv_image
-            # # resizing the video window
-            # frame = cv2.resize(frame, (800, 800), interpolation=cv2.INTER_CUBIC)
-
-            # Detect color in input ROI and switch filter:
-            #   Switch the target pose to a pixel coord:
-            # Camera intrinsics:
-            fx = self.intrinsic_mat[0, 0]
-            fy = self.intrinsic_mat[1, 1]
-            cx0 = self.intrinsic_mat[0, 2]
-            cy0 = self.intrinsic_mat[1, 2]
-
-            # Extract 3D target position in camera frame
-            Xtarg = self.target_pose.position.x
-            Ytarg = self.target_pose.position.y
-            Ztarg = self.target_pose.position.z
-
-            # Project 3D point to pixel coordinates
-            u = int(fx * Xtarg / Ztarg + cx0)
-            v = int(fy * Ytarg / Ztarg + cy0)
-
-            target_pixel = (u, v)
-
-            self.vision.detect_input_and_switch_filter(frame, target_pixel, roi_size=10)
-
-            # Get the frame after the filter the mask have been applied.
-            frame_after_filter, frame_threshold = self.vision.processing_video_frame(
-                frame, self.vision.current_low_hsv, self.vision.current_high_hsv
+            # CRITICAL: Reset the tracker when switching colors.
+            # This ensures IDs from the previous color do not persist.
+            self.vision.tracker = Sort(max_age=15, min_hits=3, iou_threshold=0.1)
+        else:
+            self.get_logger().warn(
+                f"Received command '{new_color}', but calibration data not found!"
             )
 
-            # Find the contour around the detected bug, draw the contour and track the center
-            contour, heirarchy = self.vision.add_contour(frame_threshold)
-            detections = self.vision.draw_bounding_box(contours=contour, frame=frame_after_filter)
-            tracked = self.vision.tracker.update(detections)
-            centers = self.vision.track_results(tracked, frame_after_filter)
+    def info_cb(self, msg):
+        """Camera Info callback to retrieve intrinsics."""
+        if self.intrinsics is None:
+            self.intrinsics = np.array(msg.k).reshape(3, 3)
+            self.get_logger().info('Camera Intrinsics Received.')
 
-            # applying border around ROI
-            frame_with_border_on_ROI = self.vision.apply_border_on_ROI(frame_after_filter, frame)
+    def image_cb(self, msg):
+        """
+        Handle the main image processing callback.
 
-            # Convert the opencv np.ndarray msg to ros2 msg and publish
-            ros2_img_msg = self.bridge.cv2_to_imgmsg(frame_with_border_on_ROI)
-            self.camera_publisher.publish(ros2_img_msg)
+        This handles conversion, detection, tracking, 3D projection, and publishing.
+        """
+        if self.intrinsics is None:
+            return
 
-            # Initialize PoseArray
-            bug_poses = PoseArray()
-            bug_poses.header.stamp = self.get_clock().now().to_msg()
+        # Convert ROS Image to OpenCV
+        try:
+            frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        except CvBridgeError as e:
+            self.get_logger().error(f'CV Bridge Error: {e}')
+            return
 
-            # Set frame ID
-            if self.camera_frame == '':
-                bug_poses.header.frame_id = self.info_msg.header.frame_id
-            else:
-                bug_poses.header.frame_id = self.camera_frame
+        # 1. Vision Processing (Detection & Tracking)
+        # detect_objects returns bounding boxes and a frame with debug drawings
+        detections, debug_frame = self.vision.detect_objects(frame, self.target_color)
 
-            # Loop through detected bug centers
-            if centers:
-                for i, (cx, cy) in enumerate(centers):
-                    # TODO: This is in Camera frame not robot base, so we need to convert them before publishing.
-                    # Convert the centers into CV positions:
-                    Z = 0.00125      # Constant for base of board on table (NOT CORRECT)
-                    X = (cx - cx0) * Z / fx
-                    Y = (cy - cy0) * Z / fy
+        # Update SORT tracker to get persistent IDs
+        tracked_results, final_frame = self.vision.update_tracker(detections, debug_frame)
 
-                    # Create Pose for each bug identified for that color.
-                    pose = Pose()
-                    pose.position.x = float(X)
-                    pose.position.y = float(Y)
-                    pose.position.z = float(Z)
-                    # Orientation always identity quaternion for our purpose.
-                    pose.orientation.x = 0.0
-                    pose.orientation.y = 0.0
-                    pose.orientation.z = 0.0
-                    pose.orientation.w = 1.0
+        # Annotate target on screen
+        cv2.putText(
+            final_frame,
+            f'TARGET: {self.target_color.upper()}',
+            (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            (0, 255, 255),
+            2,
+        )
 
-                    # Append to PoseArray.
-                    bug_poses.poses.append(pose)
-                    # TODO: Subscribe to these poses, and publish them in the Calibration_TargetPublisher node.
-                    # We may need to have a new message type for publication of bugs with their name and position.
+        # 2. Coordinate Conversion (Pixel -> Camera Frame)
+        bug_poses = PoseArray()
+        bug_poses.header = msg.header
 
-            # Publish one message containing all bug poses
-            self.bug_poses_publisher.publish(bug_poses)
+        fx = self.intrinsics[0, 0]
+        fy = self.intrinsics[1, 1]
+        cx = self.intrinsics[0, 2]
+        cy = self.intrinsics[1, 2]
 
-    def calibrate_callback(self, success_msg):
-        # If the subscription gets a bool of True, set the parameter to True
-        if success_msg.data is True:
-            self.calibrated = True
+        # Z is assumed constant based on camera height
+        Z = self.camera_height
 
-    def roi_pose_callback(self, pose_msg):
-        # Set the target location of the color filter for target ID:
-        self.target_pose = pose_msg
+        # Process tracked objects
+        if len(tracked_results) > 0:
+            for obj_id, u, v in tracked_results:
+                # Pinhole Camera Model Projection
+                X = (u - cx) * Z / fx
+                Y = (v - cy) * Z / fy
+
+                pose = Pose()
+                pose.position.x = float(X)
+                pose.position.y = float(Y)
+                pose.position.z = float(Z)
+                # Orientation is standard identity
+                pose.orientation.w = 1.0
+
+                bug_poses.poses.append(pose)
+
+            # Publish poses
+            self.pose_pub.publish(bug_poses)
+
+        # 3. Publish Visualization
+        self.vis_pub.publish(self.bridge.cv2_to_imgmsg(final_frame, encoding='bgr8'))
 
 
 def main(args=None):
-    """Entry point for the Camera Node."""
-    rclpy.init(args=args)
-    node = ColorDetection()
-    rclpy.spin(node)
-    rclpy.shutdown()
+    """Run the main function for the ColorDetection node."""
+    try:
+        rclpy.init(args=args)
+        node = ColorDetection()
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':
