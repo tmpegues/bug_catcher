@@ -6,11 +6,15 @@ using the SORT tracker.
 """
 
 from pathlib import Path
+
 from ament_index_python.packages import get_package_share_directory
+
 from bug_catcher.sort import Sort
 
 import cv2
+
 import numpy as np
+
 import yaml
 
 
@@ -65,7 +69,41 @@ class Vision:
                 self.purple_low_hsv = np.array(entry['hsv']['low'])
                 self.purple_high_hsv = np.array(entry['hsv']['low'])
 
-    def processing_video_frame(self, frame, low_hsv, high_hsv):
+    def detect_roi(self, frame, target_pixel=None, roi_size=20):
+        """
+        Detect the region of interest in the video frame.
+
+        This function detects the region of interest (ROI) in the video frame.
+        The ROI is a square area in the center of the frame where the user
+        can place a colored object to set the color filter.
+
+        Args
+        ----
+        frame : np.ndarray
+            Video frame from which the ROI will be detected.
+        roi_size : int
+            Size of the ROI square.
+        target_pixel : tuple[int, int], optional
+            Pixel coordinates (u, v) for the center of the ROI.
+
+        Returns
+        -------
+        roi_boundaries : tuple[int, int, int, int]
+            Boundaries of the ROI square in the format (x_min, x_max, y_min, y_max).
+
+        """
+        if target_pixel is not None:
+            u_target, v_target = target_pixel
+        # Determine the size of the target square for color identification:
+        half_size = roi_size // 2
+        x_min = max(u_target - half_size, 0)
+        x_max = min(u_target + half_size, frame.shape[1])
+        y_min = max(v_target - half_size, 0)
+        y_max = min(v_target + half_size, frame.shape[0])
+        roi_boundaries = (x_min, x_max, y_min, y_max)
+        return roi_boundaries
+
+    def processing_video_frame(self, frame, low_hsv, high_hsv, target_pixel=None, roi_size=20):
         """
         Apply a blur filter and color filter on the video frame, apply a mask excluding the ROI.
 
@@ -84,6 +122,10 @@ class Vision:
             Lower HSV value of the color filter.
         high_hsv : tuple[int, int, int]
             Higher HSV value of the color filter.
+        target_pixel : tuple[int, int], optional
+            Pixel coordinates (u, v) for the center of the ROI.
+        roi_size : int
+            Size of the ROI square.
 
         Returns
         -------
@@ -103,8 +145,16 @@ class Vision:
         # does not pick it up
         frame_after_mask = cv2.bitwise_and(frame, frame, mask=frame_threshold)
         frame_after_mask_except_ROI = frame_after_mask
-        frame_after_mask_except_ROI[50:200, 50:200] = [0, 0, 0]
-        return frame_after_mask_except_ROI, frame_threshold
+        if target_pixel is not None:
+            self.x_min, self.x_max, self.y_min, self.y_max = self.detect_roi(
+                frame, target_pixel=target_pixel, roi_size=roi_size
+            )
+            frame_after_mask_except_ROI[self.y_min : self.y_max, self.x_min : self.x_max] = [
+                0,
+                0,
+                0,
+            ]
+            return frame_after_mask_except_ROI, frame_threshold
 
     def detect_input_and_switch_filter(self, frame, target_pixel=None, roi_size=20):
         """
@@ -114,22 +164,17 @@ class Vision:
         ----
         frame : np.ndarray
             Video frame from which the input hsv values are detected in the ROI
+        target_pixel : tuple[int, int], optional
+            Pixel coordinates (u, v) for the center of the ROI.
+        roi_size : int
+            Size of the ROI square.
 
         Return
         ------
         None
 
         """
-        if target_pixel is not None:
-            u_target, v_target = target_pixel
-        # Determine the size of the target square for color identification:
-        half_size = roi_size // 2
-        x_min = max(u_target - half_size, 0)
-        x_max = min(u_target + half_size, frame.shape[1])
-        y_min = max(v_target - half_size, 0)
-        y_max = min(v_target + half_size, frame.shape[0])
-
-        color = frame[y_min:y_max, x_min:x_max]
+        color = frame[self.y_min : self.y_max, self.x_min : self.x_max]
         # color = frame[50:200, 50:200]
         hsv_color = cv2.cvtColor(color, cv2.COLOR_BGR2HSV)
 
@@ -173,8 +218,16 @@ class Vision:
 
         """
         YELLOW = [0, 255, 255]
-        frame_after_filter[50:200, 50:200] = frame[50:200, 50:200]
-        cv2.rectangle(frame_after_filter, (50, 50), (200, 200), YELLOW, 5)
+        frame_after_filter[self.y_min : self.y_max, self.x_min : self.x_max] = frame[
+            self.y_min : self.y_max, self.x_min : self.x_max
+        ]
+        cv2.rectangle(
+            frame_after_filter,
+            (self.x_min, self.y_min),
+            (self.x_max, self.y_max),
+            YELLOW,
+            5,
+        )
         return frame_after_filter
 
     def blur_trackbar(self, val):
@@ -277,7 +330,7 @@ class Vision:
             cx = (x1 + x2) // 2
             cy = (y1 + y2) // 2
 
-            centers.append((cx, cy))   # store center for each bug
+            centers.append((cx, cy))  # store center for each bug
 
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
             cv2.circle(frame, (cx, cy), 4, (0, 255, 0), -1)
@@ -291,6 +344,6 @@ class Vision:
                 2,
             )
 
-        return centers        # return list of centers
+        return centers  # return list of centers
 
     # #################### End_Citation [13] ##################
