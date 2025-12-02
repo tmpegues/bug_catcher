@@ -11,14 +11,19 @@
     <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py">
         <arg name="depth_module.profile" value="1280x720x30"/>
         <arg name="pointcloud.enable" value="true"/>
-        <arg name="rgb_camera.profile" value="1280x720x30"/>
     </include>
 
-    <!--Launch the visual package for aruco tag identification-->
-    <include file="$(find-pkg-share bug_catcher)/launch/aruco_recognition.launch.xml"/>
+    <!--Launch the April tag identification Node-->
+    <node pkg="apriltag_ros" exec="apriltag_node" name="apriltag">
+        <!-- Remaps to RealSense topics -->
+        <remap from="image_rect" to="/camera/camera/color/image_raw"/>
+        <remap from="camera_info" to="/camera/camera/color/camera_info"/>
+        <param from = "$(find-pkg-share apriltag_ros)/cfg/tags_16h5.yaml"/>
+    </node>
 
     <!--Load the planning scene and await action service call-->
     <node pkg="bug_catcher" exec="pick_node">
+        <!-- Load AprilTag tag family -->
         <param name="filename" value="$(find-pkg-share bug_catcher)/config/objects.yaml"/>
     </node>
 

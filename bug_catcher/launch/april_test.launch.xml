@@ -1,0 +1,15 @@
+<launch>
+    <!--Launch the Realsense Camera Node-->
+    <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py">
+        <arg name="depth_module.profile" value="1280x720x30"/>
+        <arg name="pointcloud.enable" value="true"/>
+    </include>
+l
+    <!--Launch the April tag identification Node-->
+    <node pkg="apriltag_ros" exec="apriltag_node" name="apriltag">
+        <!-- Remaps to RealSense topics -->
+        <remap from="image_rect" to="/camera/camera/color/image_raw"/>
+        <remap from="camera_info" to="/camera/camera/color/camera_info"/>
+        <param from = "$(find-pkg-share apriltag_ros)/cfg/tags_16h5.yaml"/>
+    </node>
+</launch>
