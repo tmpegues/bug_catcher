@@ -21,19 +21,12 @@ Parameters:
     #TODO: Add other parameters I have added.
 """
 
-from bug_catcher_interfaces.msg import ArucoMarkers
 import cv2
-from cv_bridge import CvBridge
-from geometry_msgs.msg import Pose, PoseArray
 from geometry_msgs.msg import TransformStamped
 import numpy as np
-from rcl_interfaces.msg import ParameterDescriptor, ParameterType
 import rclpy
 import rclpy.node
-from rclpy.qos import qos_profile_sensor_data
 from scipy.spatial.transform import Rotation as R
-from sensor_msgs.msg import CameraInfo
-from sensor_msgs.msg import Image
 import tf2_ros
 from tf2_ros import TransformBroadcaster
 from tf2_ros.buffer import Buffer
@@ -84,7 +77,7 @@ class CalibrationNode(rclpy.node.Node):
         # PUBLISHERS:
 
         # Timer:
-        self.timer_update = self.create_timer(0.01, self.calibrat_target_publisher)
+        self.timer_update = self.create_timer(0.1, self.calibrate_target_publisher)
 
         # Listeners:
         # The buffer stores received tf frames:
@@ -95,21 +88,21 @@ class CalibrationNode(rclpy.node.Node):
         self.static_broadcaster = StaticTransformBroadcaster(self)
         self.dynamic_broadcaster = TransformBroadcaster(self)
 
-        # Establish the transforms of Robot to Tags that we already know.
-        #   These are established from environment set up (Designed to be constant/known)
-        for marker_id, (x, y) in self.tag_params.items():
-            static_tf = TransformStamped()
-            static_tf.header.stamp = self.get_clock().now().to_msg()
-            static_tf.header.frame_id = 'base'
-            static_tf.child_frame_id = f'tag_{marker_id}'
-            static_tf.transform.translation.x = x
-            static_tf.transform.translation.y = y
-            static_tf.transform.translation.z = 0.025    # Z offset of base on table top.
-            static_tf.transform.rotation.x = 0.0
-            static_tf.transform.rotation.y = 0.0
-            static_tf.transform.rotation.z = 0.0
-            static_tf.transform.rotation.w = 1.0
-            self.static_broadcaster.sendTransform(static_tf)
+        # # Establish the transforms of Robot to Tags that we already know.
+        # #   These are established from environment set up (Designed to be constant/known)
+        # for marker_id, (x, y) in self.tag_params.items():
+        #     static_tf = TransformStamped()
+        #     static_tf.header.stamp = self.get_clock().now().to_msg()
+        #     static_tf.header.frame_id = 'base'
+        #     static_tf.child_frame_id = f'tag_{marker_id}'
+        #     static_tf.transform.translation.x = x
+        #     static_tf.transform.translation.y = y
+        #     static_tf.transform.translation.z = 0.025    # Z offset of base on table top.
+        #     static_tf.transform.rotation.x = 0.0
+        #     static_tf.transform.rotation.y = 0.0
+        #     static_tf.transform.rotation.z = 0.0
+        #     static_tf.transform.rotation.w = 1.0
+        #     self.static_broadcaster.sendTransform(static_tf)
 
         # Create and save the matrix version of the base to marker trasforms for static recall:
         self.base_tag = {}
@@ -141,29 +134,30 @@ class CalibrationNode(rclpy.node.Node):
         msg.transform.rotation.w = 1.0
         self.dynamic_broadcaster.sendTransform(msg)
 
-        # Retrieve the Camera_Link to Camera_Optical Tf:
-        try:
-            tf_msg = self.buffer.lookup_transform(
-                'camera_link', 'camera_color_optical_frame', rclpy.time.Time()
-            )
-            # Convert the transform message to a matrix and store.
-            t = tf_msg.transform.translation
-            q = tf_msg.transform.rotation
-            Rm = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
-            # Save this transform statically in the node:  
-            self.optical_link = np.eye(4)
-            self.optical_link[:3, :3] = Rm
-            self.optical_link[:3, 3] = [t.x, t.y, t.z]
-        except (tf2_ros.LookupException,
-                tf2_ros.ExtrapolationException,
-                tf2_ros.ConnectivityException) as e:
-            print(f'Transform for Camera not yet available: {e}')
+        # # Retrieve the Camera_Link to Camera_Optical Tf:
+        # try:
+        #     tf_msg = self.buffer.lookup_transform(
+        #         'camera_link', 'camera_color_optical_frame', self.get_clock().now().to_msg()
+        #     )
+        #     # Convert the transform message to a matrix and store.
+        #     t = tf_msg.transform.translation
+        #     q = tf_msg.transform.rotation
+        #     Rm = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
+        #     # Save this transform statically in the node:  
+        #     self.optical_link = np.eye(4)
+        #     self.optical_link[:3, :3] = Rm
+        #     self.optical_link[:3, 3] = [t.x, t.y, t.z]
+        # except (tf2_ros.LookupException,
+        #         tf2_ros.ExtrapolationException,
+        #         tf2_ros.ConnectivityException) as e:
+        #     print(f'Transform for Camera not yet available: {e}')
 
         # Establish Calibration Averaging Variables:
         self.num_april_tags = 4
         self.calibration_done = False
         self.calibration_frames = []
         self.max_calibration_frames = 150    # Average over 150 frames (5 seconds)
+        self.state = State.CALIBRATING
 
     def average_transforms(self, T_list):
         """
@@ -224,7 +218,7 @@ class CalibrationNode(rclpy.node.Node):
             # Listen and store the tf of base_marker seen by camera:
             try:
                 tf_msg = self.buffer.lookup_transform(
-                    'camera_color_optical_frame', f'tag_{i}', rclpy.time.Time()
+                    'camera_color_optical_frame', f'tag_{i}', self.get_clock().now().to_msg()
                 )
                 # Convert the transform message to a matrix and store.
                 t = tf_msg.transform.translation
@@ -234,6 +228,7 @@ class CalibrationNode(rclpy.node.Node):
                 T_optical_tag[:3, :3] = Rm
                 T_optical_tag[:3, 3] = [t.x, t.y, t.z]
                 optical_tag_tf[i] = T_optical_tag
+                self.get_logger().info(f' Base to Camera for Frame: {optical_tag_tf[i]}')
 
                 # Get the inverse of the camera to tag:
                 tag_optical_tf[i] = self.invert_tf(optical_tag_tf[i])
@@ -264,6 +259,7 @@ class CalibrationNode(rclpy.node.Node):
             T_base_camera_frame = self.calibrateCamera_April(self.num_april_tags)
             if T_base_camera_frame is not None:
                 self.calibration_frames.append(T_base_camera_frame)
+                self.get_logger().info(f' Base to Camera for Frame: {T_base_camera_frame}')
 
             if len(self.calibration_frames) >= self.max_calibration_frames:
                 # Average transforms
@@ -300,8 +296,6 @@ class CalibrationNode(rclpy.node.Node):
         elif self.state == State.PUBLISHING:
             pass
 
-
-            
 
 def main():
     rclpy.init()
