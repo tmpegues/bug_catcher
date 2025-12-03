@@ -116,8 +116,12 @@ class CalibrationNode(rclpy.node.Node):
         self.num_april_tags = 4
         self.calibration_done = False
         self.calibration_frames = []
-        self.max_calibration_frames = 10  # Average over 150 frames (5 seconds)
+        self.max_calibration_frames = 300  # Average over 300 frames (10 seconds)
         self.state = State.INITIALIZING
+
+        # Translate Y-coordinate to match ROS REP-103 frame as OpenCV has a flipped y orientation.
+        # X_ros =  Y_cv, Y_ros = -X_cv, Z_ros = Z_cv
+        self.Tcv_to_ros = np.array([[0, 1, 0, 0], [-1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
 
     def average_transforms(self, T_list):
         """
@@ -230,8 +234,8 @@ class CalibrationNode(rclpy.node.Node):
             case State.INITIALIZING:
                 try:
                     tf_msg = self.buffer.lookup_transform(
-                        'camera_link',
                         'camera_color_optical_frame',
+                        'camera_link',
                         rclpy.time.Time(),
                         timeout=rclpy.duration.Duration(seconds=1.0),
                     )
@@ -243,6 +247,9 @@ class CalibrationNode(rclpy.node.Node):
                     optical_link = np.eye(4)
                     optical_link[:3, :3] = Rm
                     optical_link[:3, 3] = [t.x, t.y, t.z]
+
+                    # Transform the Camera_Link to Ros:
+                    optical_link = self.Tcv_to_ros @ optical_link
                     self.optical_link = optical_link
                     self.state = State.CALIBRATING
                     self.get_logger().info('Camera tf available')
