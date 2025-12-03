@@ -1,112 +1,238 @@
-"""The Bug Catcher's main decision making and control node."""
+"""
+The script implements the 'catcher_node' within the 'bug_catcher' package.
 
-from bug_catcher.bug import Bug
-from bug_catcher.bugmover import BugMover
+Subscribers
+-----------
++ /bug_poses (geometry_msgs.msg.PoseArray): Receives lists of detected bug poses
+                                            from the vision system.
+
+Services/Actions
+----------------
++ /move_group (moveit_msgs.action.MoveGroup): For trajectory planning.
++ /execute_trajectory (moveit_msgs.action.ExecuteTrajectory): For robot movement.
+
+"""
+
 from bug_catcher.motionplanninginterface import MotionPlanningInterface
-from bug_catcher_interfaces.msg import BugsInFrame
+from bug_catcher.planningscene import Obstacle
+
+from geometry_msgs.msg import PoseArray, PoseStamped
+
 import rclpy
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+
+from shape_msgs.msg import SolidPrimitive
+
+import tf2_geometry_msgs  # noqa: F401 (Registers PoseStamped for TF2)
+
+from tf2_ros import Buffer, TransformException, TransformListener
 
 
 class CatcherNode(Node):
-    """The Bug Catcher's main decision making and control node."""
+    """Bridge the camera frame to the robot's base frame."""
 
     def __init__(self):
-        """Initialize the Catcher, connecting to the two camera nodes as needed."""
+        """Initialize the Catcher, connecting to interfaces."""
         super().__init__('catcher_node')
 
-        # Initialize the MotionPlanningInterface:
         self.mpi = MotionPlanningInterface(self)
+
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
 
         self.setup_aruco()
         self.setup_bug_color()
 
-        self.bug_list = []
-        self.mover = BugMover(self)
+        # State flags
+        self.is_busy = False
+        self.target_bug_name = 'target_bug'
+        # Hardcoded size: 5cm x 2cm x 2cm
+        self.bug_size = [0.05, 0.02, 0.02]
 
-        self.get_logger().info('Catcher Node: initialization complete')
+        self.get_logger().info('Catcher Node: initialization complete. Waiting for bugs...')
 
     def setup_aruco(self):
         """
         Set up aruco detection for the arena.
 
-        Currently, this will involve setting up listeners to the 'aruco' node, but will eventually
-        just initialize the aruco class into this node, or will add a service call to allow this
-        node to get aruco poses when specifically requested
+        Currently a placeholder. Future implementations will use this to determine
+        the robot's location relative to the arena or to identify drop-off zones.
         """
         pass
 
     def setup_bug_color(self):
         """
-        Set up color detection for finding bugs in the arena.
+        Set up subscribers for the color detection system.
 
-        Currently, this involves setting up listeners to the 'bug_color' node, but will eventually
-        just initialize the 'bug_color' class into this node.
+        Uses a MutuallyExclusiveCallbackGroup to ensure the callback does not
+        block the main thread or interfere with MoveIt action clients running
+        in the MultiThreadedExecutor.
         """
+        cb_group = MutuallyExclusiveCallbackGroup()
+
+        # Subscribe to PoseArray from the colordetection node
         self.bugs_in_frame_listener = self.create_subscription(
-            BugsInFrame, 'bugs_in_frame', self.bug_list_update, 10
+            PoseArray, '/bug_poses', self.bug_callback, 10, callback_group=cb_group
         )
-        pass
 
-    def bug_list_update(self, bugs_in_frame):
+    def transform_pose(self, input_pose, from_frame, to_frame='base'):
         """
-        Update the persistent list of bugs based on the most recently received frame.
+        Transform a pose from the Camera Frame to the Robot Base Frame.
 
         Args:
         ----
-        bugs_in_frame (BugsInFrame): A list of ids and poses for the bugs seen in the last frame
-
-        """
-        # Check if any ids already in the list need to be updated with new poses
-        for existing_index, existing_bug in enumerate(self.bug_list):
-            if existing_bug.ID in bugs_in_frame.id:
-                # Get the index of that bug in the new frame
-                id_index = bugs_in_frame.id.index(existing_bug.ID)
-                # Update the pose
-                existing_bug.update(bugs_in_frame.pose[id_index])
-                # Remove this bug from the message
-                bugs_in_frame.id.pop[id_index]
-                bugs_in_frame.pose.pop[id_index]
-                bugs_in_frame.color.pop[id_index]
-
-            else:  # Remove the bug if it hasn't been seen in a specific period (1 sec?)
-                if existing_bug.pose.header.stamp.sec - self.get_clock().now >= 1:
-                    self.bug_list.pop(existing_index)
-
-        # Now that we've checked the bugs that we already know exist, add the rest of the detected
-        # bugs to the existing list
-        for detected_bug in bugs_in_frame.id:
-            self.bug_list.append(Bug(detected_bug.id, detected_bug.pose, detected_bug.color))
-        pass
-
-    def decide_which_bug(self):
-        """
-        Decide which bug to pick.
-
-        Right now, I'm assuming that it will just be base on which bug is closest to the ee.
+        input_pose (geometry_msgs.msg.Pose): The raw pose from vision.
+        from_frame (str): The frame ID of the camera ('camera_color_optical_frame').
+        to_frame (str, default='base'): The target frame ID ('base').
 
         Returns
         -------
-        bug: the bug closest to the end effector, which should be the easiest bug to pick up.
+        (geometry_msgs.msg.Pose): The transformed pose, or None if TF failed.
 
         """
-        min_dist = 100
-        best_bug_id = -1
-        for existing_bug in self.bug_list:
-            dist = self.mover._calc_distance(existing_bug.pose.pose, self.mpi.rs.get_ee_pose())
-            if dist < min_dist:
-                min_dist = dist
-                best_bug_id = existing_bug.ID
+        try:
+            pose_stamped = PoseStamped()
+            pose_stamped.header.frame_id = from_frame
+            # Request the transform at the current time
+            pose_stamped.header.stamp = self.get_clock().now().to_msg()
+            pose_stamped.pose = input_pose
 
-        return self.bug_list[best_bug_id]
+            # Perform the transform with a 1-second timeout to allow buffer catch-up
+            output_pose_stamped = self.tf_buffer.transform(
+                pose_stamped, to_frame, timeout=rclpy.duration.Duration(seconds=1.0)
+            )
+            return output_pose_stamped.pose
+        except TransformException as e:
+            self.get_logger().warn(f'TF Failed: {e}')
+            return None
+
+    def spawn_bug_in_rviz(self, pose):
+        """
+        Add the detected bug to the MoveIt Planning Scene.
+
+        This creates a collision object in the simulation/planning environment,
+        allowing MoveIt to plan grasp trajectories towards it.
+
+        Args:
+        ----
+        pose (geometry_msgs.msg.Pose): The pose of the bug in the planning frame.
+
+        """
+        # Define the shape (Box)
+        prim = SolidPrimitive()
+        prim.type = SolidPrimitive.BOX
+        prim.dimensions = self.bug_size
+
+        # Create the Obstacle object
+        bug_obstacle = Obstacle(self.target_bug_name, pose, prim)
+
+        # Add to the scene via the MotionPlanningInterface
+        self.mpi.ps.add_obstacle(bug_obstacle)
+        self.get_logger().info(f'Added {self.target_bug_name} to Planning Scene')
+
+    async def bug_callback(self, msg):
+        """
+        Handle vision-detected bugs.
+
+        This function executes the core logic pipeline:
+        1. Parse vision data.
+        2. Transform coordinates to the robot frame.
+        3. Update the environment model (spawn object).
+        4. Trigger the grasp sequence.
+
+        Args:
+        ----
+        msg (geometry_msgs.msg.PoseArray): List of bug poses from vision.
+
+        """
+        if self.is_busy:
+            return
+        if len(msg.poses) == 0:
+            return
+
+        self.is_busy = True
+        self.get_logger().info('Bug detected! Deciding what to do...')
+
+        # === 1. Extract Data ===
+        camera_pose = msg.poses[0]
+        source_frame = msg.header.frame_id
+
+        # === 2. Transform Coordinate ===
+        robot_frame_pose = self.transform_pose(camera_pose, source_frame, to_frame='base')
+
+        if robot_frame_pose is None:
+            self.get_logger().error('TF Transform failed. Waiting for TF tree...')
+            self.is_busy = False
+            return
+
+        # === 3. Spawn in RViz ===
+        self.spawn_bug_in_rviz(robot_frame_pose)
+
+        # === 4. Execute Catch Sequence ===
+        await self.execute_catch_sequence()
+
+        # Catch multiple bugs continuously
+        # self.is_busy = False
+
+    async def execute_catch_sequence(self):
+        """
+        Execute the physical motion sequence to catch the bug.
+
+        Steps:
+        1. Move to Home/Ready.
+        2. Open Gripper.
+        3. Move to Pre-Grasp (Above object).
+        4. Move to Grasp (At object).
+        5. Close Gripper.
+        6. Lift object.
+        """
+        bug = self.target_bug_name
+
+        self.get_logger().info('--- Sequence: Get Ready ---')
+        if not await self.mpi.GetReady():
+            return
+
+        self.get_logger().info('--- Sequence: Open Gripper ---')
+        if not await self.mpi.OpenGripper():
+            return
+
+        self.get_logger().info(f'--- Sequence: Move Above {bug} ---')
+        if not await self.mpi.MoveAboveObject(bug):
+            return
+
+        self.get_logger().info(f'--- Sequence: Move Down to {bug} ---')
+        if not await self.mpi.MoveDownToObject(bug):
+            return
+
+        self.get_logger().info('--- Sequence: Close Gripper (Pick) ---')
+        if not await self.mpi.CloseGripper(bug):
+            return
+
+        self.get_logger().info('--- Sequence: Lift Up ---')
+        if not await self.mpi.LiftOffTable():
+            return
+
+        self.get_logger().info('SUCCESS: Bug Caught!')
 
 
 def main(args=None):
-    """Entry point for the Catcher Node."""
+    """Run the main entry point for the Catcher Node."""
     rclpy.init(args=args)
+
     catcher_node = CatcherNode()
-    rclpy.spin(catcher_node)
-    rclpy.shutdown()
+
+    executor = MultiThreadedExecutor()
+    executor.add_node(catcher_node)
+
+    try:
+        executor.spin()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        catcher_node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':
