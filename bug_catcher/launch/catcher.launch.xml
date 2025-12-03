@@ -1,0 +1,41 @@
+<launch>
+    <arg name="demo" default="True" description="bool: true will launch the Franka demo.launch.py. False will open rviz, but not the demo"/>
+
+    <!--Launch the Realsense Camera Node (wrist_camera)-->
+    <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py">
+        <arg name="camera_name" value="wrist_camera"/>
+        <arg name="pointcloud.enable" value="true"/>
+        <arg name="color_width" value="640"/>
+        <arg name="color_height" value="480"/>
+        <arg name="color_fps" value="30"/>
+    </include>
+
+    <!--Launch the Franka Rviz Configuration-->
+    <include file="$(find-pkg-share franka_fer_moveit_config)/launch/demo.launch.py" if="$(eval $(var demo)==True)"/>
+    <include file="$(find-pkg-share franka_fer_moveit_config)/launch/moveit_rviz.launch.py" if="$(eval $(var demo)==False)">
+        <arg  name ="robot_ip" value="panda0.robot"/>
+    </include>
+
+    <!--Static Transform Publisher from wrist to camera-->
+    <node pkg="tf2_ros" exec="static_transform_publisher" name="wrist_cam_broadcaster"
+          args="0.4 0.0 0.5 3.14159 0 -1.57079 base wrist_camera_color_optical_frame" />
+
+    <!--Load the Color Detection Node-->
+    <node pkg="bug_catcher" exec="color_detection_node" name="color_detection_node" output="screen">
+        <remap from="/camera/camera/color/image_raw" to="/wrist_camera/color/image_raw"/>
+        <remap from="/camera/camera/color/camera_info" to="/wrist_camera/color/camera_info"/>
+        <param name="default_color" value="red"/>
+        <param name="camera_height" value="0.5"/>
+        <param from = "$(find-pkg-share bug_catcher)/config/calibrated_parameters.yaml"/>
+    </node>
+
+    <!--Load the Catcher Node-->
+    <node pkg="bug_catcher" exec="catcher_node" name="catcher_node" output="screen"></node>
+
+    <!--RQT Image Viewer-->
+    <node pkg="rqt_image_view" exec="rqt_image_view" name="target_image_viewer" 
+          args="/target_image"/>
+    <node pkg="rqt_image_view" exec="rqt_image_view" name="mask_image_viewer" 
+          args="/mask_image"/>
+
+</launch>

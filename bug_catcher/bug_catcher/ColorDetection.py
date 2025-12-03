@@ -87,10 +87,10 @@ class ColorDetection(Node):
 
         # Subscribers
         self.image_sub = self.create_subscription(
-            Image, '/camera/camera/color/image_raw', self.image_cb, 10
+            Image, '/camera/wrist_camera/color/image_raw', self.image_cb, 10
         )
         self.info_sub = self.create_subscription(
-            CameraInfo, '/camera/camera/color/camera_info', self.info_cb, 10
+            CameraInfo, '/camera/wrist_camera/color/camera_info', self.info_cb, 10
         )
         self.command_sub = self.create_subscription(
             String, '/target_color', self.command_callback, 10
