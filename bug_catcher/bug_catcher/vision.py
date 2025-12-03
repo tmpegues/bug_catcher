@@ -6,8 +6,6 @@ data, generating binary masks for specific colors, detecting contours, and
 tracking objects over time using the SORT algorithm.
 """
 
-from bug_catcher.sort import Sort
-
 import cv2
 
 import numpy as np
@@ -31,14 +29,6 @@ class Vision:
         """Initialize the Vision processor."""
         # Kernel size for blurring
         self.blur_ksize = 11
-
-        # Initialize the SORT tracker
-        # max_age: Maximum number of frames to keep a track alive without detection
-        # min_hits: Minimum number of consecutive detections before a track is confirmed
-        # iou_threshold: Minimum IOU overlap to match a detection to a track
-        # #################### Begin_Citation [13] ##################
-        self.tracker = Sort(max_age=15, min_hits=3, iou_threshold=0.1)
-        # #################### End_Citation [13] ##################
 
         # Dictionary to store loaded color profiles
         self.colors = {}
@@ -124,38 +114,47 @@ class Vision:
         -------
         detections (np.ndarray): Array of detections [x1, y1, x2, y2, score] for SORT.
         display_frame (np.ndarray): A copy of the frame with raw detection boxes drawn.
-        mask (np.ndarray): The binary mask used for detection.
 
         """
         mask = self.get_mask(frame, color_name)
 
-        # Handle case where color is not found
+        # Prepare display frame
+        display_frame = frame.copy()
+
         if mask is None:
-            # Return empty detections, original frame, and a blank mask
             h, w = frame.shape[:2]
             blank_mask = np.zeros((h, w), dtype=np.uint8)
-            return [], frame, blank_mask
+            return [], display_frame, blank_mask
 
-        # Find external contours
+        # Find external contours only (excludes nested contours)
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        detections = []
-        display_frame = frame.copy()
+        if not contours:
+            return [], display_frame, mask
+
+        # Find the largest contour
+        largest_contour = None
+        max_area = 0
 
         for cnt in contours:
             area = cv2.contourArea(cnt)
 
-            # Filter out small noise artifacts
+            # Filter small noise
             if area < 500:
                 continue
 
-            x, y, w, h = cv2.boundingRect(cnt)
-            detections.append([x, y, x + w, y + h, 1.0])
+            # Check if this is the biggest one so far
+            if area > max_area:
+                max_area = area
+                largest_contour = cnt
 
-            # Draw raw detection bounding box
-            cv2.drawContours(display_frame, [cnt], -1, (0, 0, 255), 2)
+        # If we found a valid object
+        if largest_contour is not None:
+            # Draw the RAW contour in RED (to show what was detected)
+            cv2.drawContours(display_frame, [largest_contour], -1, (0, 0, 255), 2)
+            return [largest_contour], display_frame, mask
 
-        return np.array(detections), display_frame, mask
+        return [], display_frame, mask
 
     def update_tracker(self, detections, frame):
         """
@@ -175,34 +174,43 @@ class Vision:
 
         """
         if len(detections) == 0:
-            detections = np.empty((0, 5))
+            return [], frame
 
-        # Update SORT algorithm
-        tracked_objects = self.tracker.update(detections)
+        # Get the contour passed from detect_objects
+        cnt = detections[0]
 
-        results = []
+        # 1. Calculate Center (Centroid) using Moments
+        M = cv2.moments(cnt)
+        if M['m00'] != 0:
+            cx = int(M['m10'] / M['m00'])
+            cy = int(M['m01'] / M['m00'])
+        else:
+            # Fallback to bounding rect center if moments fail
+            x, y, w, h = cv2.boundingRect(cnt)
+            cx = int(x + w / 2)
+            cy = int(y + h / 2)
 
-        for x1, y1, x2, y2, obj_id in tracked_objects:
-            cx = int((x1 + x2) / 2)
-            cy = int((y1 + y2) / 2)
-            results.append((int(obj_id), cx, cy))
+        # 2. Assign a static ID (since we assume single object)
+        obj_id = 0
 
-            # Visualization
-            # Draw tracked bounding box (Green)
-            cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+        # 3. Visualization
+        # Draw the contour in GREEN
+        cv2.drawContours(frame, [cnt], -1, (0, 255, 0), 3)
 
-            # Draw Track ID
-            cv2.putText(
-                frame,
-                f'ID: {int(obj_id)}',
-                (int(x1), int(y1) - 10),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (0, 255, 0),
-                2,
-            )
+        # Draw the Center Point
+        cv2.circle(frame, (cx, cy), 7, (255, 0, 0), -1)  # Blue dot
+        cv2.circle(frame, (cx, cy), 3, (255, 255, 255), -1)  # White inner dot
 
-            # Draw Center Point
-            cv2.circle(frame, (cx, cy), 5, (255, 0, 0), -1)
+        # Draw ID
+        cv2.putText(
+            frame,
+            f'Target (ID:{obj_id})',
+            (cx - 20, cy - 20),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 255, 0),
+            2,
+        )
 
+        results = [(obj_id, cx, cy)]
         return results, frame
