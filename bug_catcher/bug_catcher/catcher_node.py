@@ -47,6 +47,9 @@ class CatcherNode(Node):
         # Initialize MotionPlanningInterface
         self.mpi = MotionPlanningInterface(self)
 
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+
         # =========================================
         # 1. Parameter Declarations
         # =========================================
