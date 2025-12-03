@@ -36,9 +36,10 @@
         <param name="filename" value="$(find-pkg-share bug_catcher)/config/objects.yaml"/>
     </node>
 
-    <!--Load the Color Vision Identification Node-->
+    <!--Load the Color Vision Identification Node
     <node pkg="bug_catcher" exec="color_detection_node">
             <param from = "$(find-pkg-share bug_catcher)/config/aruco_parameters.yaml"/>
     </node>
+    -->
 
 </launch>
