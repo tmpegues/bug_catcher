@@ -24,7 +24,7 @@
         <param from = "$(find-pkg-share apriltag_ros)/cfg/tags_16h5.yaml"/>
     </node>
 
-   <!--Load the planning scene and await action service call-->
+   <!--Load the Calibration Node and await action service call-->
     <node pkg="bug_catcher" exec="calibration_node">
         <!-- Load AprilTag tag family -->
         <param name="filename" value="$(find-pkg-share bug_catcher)/config/calibration_parameters.yaml"/>
@@ -35,11 +35,4 @@
         <!-- Load AprilTag tag family -->
         <param name="filename" value="$(find-pkg-share bug_catcher)/config/objects.yaml"/>
     </node>
-
-    <!--Load the Color Vision Identification Node
-    <node pkg="bug_catcher" exec="color_detection_node">
-            <param from = "$(find-pkg-share bug_catcher)/config/aruco_parameters.yaml"/>
-    </node>
-    -->
-
 </launch>

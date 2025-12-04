@@ -1,39 +1,58 @@
 """
-Subscriptions:
-   /camera/image_raw (sensor_msgs.msg.Image)
-   /camera/camera_info (sensor_msgs.msg.CameraInfo)
-   /camera/camera_info (sensor_msgs.msg.CameraInfo)
+Calibration Node for AprilTag Camera Extrinsics and Rviz Marker Publication.
 
-Published Topics:
-    /aruco_markers (bug_catcher_interfaces.msg.ArucoMarkers)
-       Provides an array of all poses along with the corresponding
-       marker ids.
+This node performs initial camera extrinsic calibration using multiple AprilTags fixed in known
+positions on the robots base frame. Over several hundred frames, the node computes an averaged
+base to camera transform and publishes it as a static TF. After calibration, the node switches
+modes to publish bug detections as RViz markers and update the MoveIt PlanningScene
+with the currently targeted bug. This keeps it active in the ROS system after calibration.
+
+Subscriptions
+-------------
+/bugs : bug_catcher_interfaces/BugArray
+    Incoming detections of all tracked bugs: bug_id, pose, color, and target designation.
+
+Published Topics
+----------------
+visualization_marker_array : visualization_msgs/MarkerArray
+    RViz markers for all non-target bugs.
+
+planning_scene : moveit_msgs/PlanningScene
+    Planning scene updates containing or removing the target bug as a collision object.
+
+TF Frames
+---------
+Publishes:
+    base to camera_link (static)
+    Additional dynamic transforms if required by future extensions
+        (If we decide to use frames for bugs)
 
 Parameters
 ----------
-    marker_size - size of the markers in meters (default .0625)
-    aruco_dictionary_id - dictionary that was used to generate markers
-                          (default DICT_5X5_250)
-    image_topic - image topic to subscribe to (default /camera/image_raw)
-    camera_info_topic - camera info topic to subscribe to
-                         (default /camera/camera_info)
-    #TODO: Add other parameters I have added.
+calibration.tags.tag_<i>.x : float
+calibration.tags.tag_<i>.y : float
+    Known AprilTag positions in the base frame.
 
 """
 
 import cv2
-from geometry_msgs.msg import TransformStamped
 import numpy as np
 import rclpy
-import rclpy.node
-from scipy.spatial.transform import Rotation as R
 import tf2_ros
+from bug_catcher.planningscene import PlanningSceneClass, Obstacle
+from bug_catcher_interfaces import BugArray
+from enum import Enum, auto
+from geometry_msgs.msg import TransformStamped
+from moveit_msgs.msg import PlanningScene
+from rclpy.node import Node
+from rclpy.qos import QoSDurabilityPolicy, QoSProfile
+from scipy.spatial.transform import Rotation as R
 from tf2_ros import TransformBroadcaster
 from tf2_ros.buffer import Buffer
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 from tf2_ros.transform_listener import TransformListener
 from tf_transformations import quaternion_matrix
-from enum import auto, Enum
+from visualization_msgs.msg import Marker, MarkerArray
 
 
 class State(Enum):
@@ -49,9 +68,10 @@ class State(Enum):
     PUBLISHING = auto()
 
 
-class CalibrationNode(rclpy.node.Node):
+class CalibrationNode(Node):
     def __init__(self):
         super().__init__('calibration_node')
+
         # Declare tag calibration parameters:
         self.declare_parameter('calibration.tags.tag_1.x', -0.1143)
         self.declare_parameter('calibration.tags.tag_1.y', -0.4572)
@@ -80,9 +100,24 @@ class CalibrationNode(rclpy.node.Node):
                 self.get_parameter('calibration.tags.tag_1.y').get_parameter_value().double_value,
             ),
         }
+
         # SUBSCRIPTIONS:
+        # Subscription for the bug tracking info:
+        self.bug_sub = self.create_subscription(BugArray, '/bugs', self.bug_callback, 10)
 
         # PUBLISHERS:
+        markerQoS = QoSProfile(
+            depth=10,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL
+        )
+        self.mark_pub = self.create_publisher(
+            MarkerArray, 'visualization_marker_array', markerQoS
+        )
+        self.planscene = self.node.create_publisher(
+            PlanningScene,
+            '/planning_scene',
+            10
+        )
 
         # Timer:
         self.timer_update = self.create_timer(0.05, self.calibrate_target_publisher)
@@ -95,8 +130,6 @@ class CalibrationNode(rclpy.node.Node):
         # Broadcasters:
         self.static_broadcaster = StaticTransformBroadcaster(self)
         self.dynamic_broadcaster = TransformBroadcaster(self)
-
-        # # Establish the tra
 
         # Create and save the matrix version of the base to marker trasforms for static recall:
         self.base_tag = {}
@@ -123,16 +156,30 @@ class CalibrationNode(rclpy.node.Node):
         # X_ros =  Y_cv, Y_ros = -X_cv, Z_ros = Z_cv
         self.Tcv_to_ros = np.array([[0, 1, 0, 0], [-1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
 
+        # Establish the required connections and trackers for updating the planningscene each call.
+        # Save the last target bug for removal each update:
+        self.ps = PlanningSceneClass(self)
+        self.last_target_bug = None
+
     def average_transforms(self, T_list):
         """
-        Average a list of 4x4 transforms (base->camera).
+        Compute the average of a list of 4x4 homogeneous transformation matrices.
 
-        Args:
-            T_list (list of np.ndarray): Each element is a 4x4 transform matrix to average.
+        This function computes the mean transform from a list of rigid-body
+        transformations. Translations are averaged component-wise, and rotations
+        are averaged using Singular Value Decomposition (SVD) to ensure a valid rotation matrix.
 
-        Returns:
-            T_avg (np.ndarray): 4x4 averaged transform.
+        Parameters
+        ----------
+        T_list : list of np.ndarray
+            A list of 4x4 homogeneous transformation matrices to average. Each matrix represents 
+            a rigid body transform.
 
+        Returns
+        -------
+        T_avg : np.ndarray or None
+            The 4x4 homogeneous transformation matrix representing the averaged transform. 
+            Returns None if the input list is empty.
         """
         if not T_list:
             return None
@@ -155,14 +202,26 @@ class CalibrationNode(rclpy.node.Node):
         # ################### End_Citation [NK2] #######################
 
         # Construct Transform Matrix of average:
-        T_base_camera_avg = np.eye(4)
-        T_base_camera_avg[:3, :3] = R_avg
-        T_base_camera_avg[:3, 3] = avg_translation
+        T_avg = np.eye(4)
+        T_avg[:3, :3] = R_avg
+        T_avg[:3, 3] = avg_translation
 
-        return T_base_camera_avg
+        return T_avg
 
     def invert_tf(self, T):
-        """Inverse of 4x4 homogeneous transform (Calibration Helper Function)."""
+        """
+        Compute the inverse of a 4x4 homogeneous transformation matrix.
+
+        Parameters
+        ----------
+        T : np.ndarray
+            A 4x4 homogeneous transformation matrix representing a rigid body transform.
+
+        Returns
+        -------
+        Tinv : np.ndarray
+            The 4x4 homogeneous transformation matrix representing the inverse transform.
+        """
         R_ = T[:3, :3]
         t = T[:3, 3]
         Tinv = np.eye(4)
@@ -172,7 +231,24 @@ class CalibrationNode(rclpy.node.Node):
 
     def calibrateCamera_April(self, num_tags):
         """
-        Calculate an average of base to camera_link transforms detected in a frame from April tags.
+        Compute the averaged base-to-camera transform using observed AprilTags.
+
+        This function listens to the transforms between the camera's optical frame
+        and AprilTags in the scene,and then averages all detected base-to-camera transforms over 
+        the tags seen in the current frame.
+
+        Parameters
+        ----------
+        num_tags : int
+            The number of AprilTags to consider for calibration. Tags are assumed
+            to be named sequentially as 'tag_1', 'tag_2', ..., 'tag_{num_tags}'.
+
+        Returns
+        -------
+        np.ndarray or None
+            A 4x4 numpy array representing the averaged homogeneous transform
+            from the robot base to the camera_link frame. Returns None if no
+            tags are successfully observed.
         """
         # Get the position of the camera to marker, then invert:
         base_camera_tf = {}  # Initialize a dictionary to hold transforms from base to camera.
@@ -209,7 +285,8 @@ class CalibrationNode(rclpy.node.Node):
                 else:
                     base_camera_tf[i] = self.base_tag[i] @ optical_tag_tf[i] @ self.optical_link
                 self.get_logger().info(
-                    f'tag_{i} seen.\nTcamera,tag = {optical_tag_tf[i]}\nTtag,camera = {tag_optical_tf[i]}\nTbase_camera = {base_camera_tf[i]}'
+                    f'tag_{i} seen.\nTcamera,tag = {optical_tag_tf[i]}\nTtag,\
+                    camera = {tag_optical_tf[i]}\nTbase_camera = {base_camera_tf[i]}'
                 )
             except (
                 tf2_ros.LookupException,
@@ -224,11 +301,26 @@ class CalibrationNode(rclpy.node.Node):
 
     def calibrate_target_publisher(self):
         """
-        Calibrate the system at start up, and switch to publishing bug locations.
+        Manages system calibration and transitions to publishing bug locations in Rviz.
 
-        This function calibrates the system at start-up, then publishes a bool that its complete.
-        Afterwards, it switches responsibility to managing Rviz views and tf info.
+        This function is intended to run periodically in a timer callback and performs the
+        following tasks based on it's state:
 
+        1. INITIALIZING:
+            - Waits for camera_link to camera_color_optical_frame transform to become available.
+            - Converts the transform to a 4x4 matrix and applies the CV to ROS frame adjustment.
+            - Stores the optical_link transform and transitions to CALIBRATING state.
+
+        2. CALIBRATING:
+            - Collects base to camera transforms using AprilTags observed in the current frame.
+            - Accumulates transforms over multiple frames.
+            - Once enough frames are collected, averages the transforms.
+            - Publishes the averaged base to camera_link transform as a static TF.
+            - Marks calibration as complete and transitions to PUBLISHING state.
+
+        3. PUBLISHING:
+            - Updates RViz markers for all tracked bugs updated in the subscriber callback.
+            - Publishes markers to the visualization_marker_array topic.
         """
         match self.state:
             case State.INITIALIZING:
@@ -253,8 +345,12 @@ class CalibrationNode(rclpy.node.Node):
                     self.optical_link = optical_link
                     self.state = State.CALIBRATING
                     self.get_logger().info('Camera tf available')
-                except:
-                    pass
+                except (
+                    tf2_ros.LookupException,
+                    tf2_ros.ExtrapolationException,
+                    tf2_ros.ConnectivityException,
+                ) as e:
+                    self.get_logger().info(f'Transform for camera still unavailable: {e}')
             case State.CALIBRATING:
                 # Perform a static callibration at Launch:
                 # Compute per-frame avearge base->camera transform:
@@ -296,6 +392,95 @@ class CalibrationNode(rclpy.node.Node):
                     self.state = State.PUBLISHING
             case State.PUBLISHING:
                 pass
+                # Update Rviz markers for all colored bugs:
+                self.marker_array.markers = self.markers
+                self.mark_pub.publish(self.marker_array)
+
+    def bug_callback(self, bug_msg):
+        """
+        Callback for updating detected bug positions and the planning scene.
+
+        Parameters
+        ----------
+        bug_msg :
+            A list/array of bug detection messages. Each bug contains:
+            - id: int8
+                The unique identifier for that colored bug.
+            - is_target : bool
+                True if the bug should be treated as the active collision target.
+            - pose : geometry_msgs/PoseStamped (or similar)
+                The estimated pose of the bug in the camera/base frame.
+            - color : str
+                The bug's color label (e.g., 'red', 'blue', ...).
+        """
+        # Remove the last target bug if it exists:
+        if self.last_target_bug is None:
+            pass
+        else:
+            self.ps.remove_obstacle(self.last_target_bug)
+        # Create an array of markers to build the arena:
+        self.marker_array = MarkerArray()
+        self.markers = []
+
+        # Break apart each bug message: is_target: 1-> CollisionObject | 0-> Marker
+        for i, bug in enumerate(bug_msg):
+            # Check if the bug is the target or not:
+            if bug.is_target is True:
+                # Set the bug as a collision object and republish planning scene.
+                size = {'type': 1, 'dimensions': [0.01, 0.01, 0.01]}  # Set to a box for all bugs.
+                current_target_bug = Obstacle('target', bug.pose.pose, size)
+                self.ps.add_obstacle(current_target_bug)
+                self.last_target_bug = current_target_bug
+            else:
+                # The bug is not a current target, just track it as a colored marker and publish.
+                marker = Marker()
+                marker.header.frame_id = 'base'
+                marker.header.stamp = bug.pose.stamp        # The bug gets a time stamp.
+                marker.ns = 'bug_markers'
+                marker.id = i           # Assumes that the ColorDetect sets a unique number.
+                marker.type = Marker.CUBE
+                marker.action = Marker.ADD
+
+                # Set the location of the bug:
+                marker.pose.position.x = bug.pose.x
+                marker.pose.position.y = bug.pose.y
+                marker.pose.position.z = bug.pose.z
+                marker.pose.orientation.x = bug.pose.orientation.x
+                marker.pose.orientation.y = bug.pose.orientation.y
+                marker.pose.orientation.z = bug.pose.orientation.z
+                marker.pose.orientation.w = bug.pose.orientation.w
+                marker.scale.x = 0.01
+                marker.scale.y = 0.01
+                marker.scale.z = 0.01
+                marker.lifetime.sec = 0.02
+                marker.lifetime.nanosec = 0
+
+                if bug.color == 'red':
+                    marker.color.r = 1.0
+                    marker.color.g = 0.0
+                    marker.color.b = 0.0
+                    marker.color.a = 1.0
+                elif bug.color == 'green':
+                    marker.color.r = 0.0
+                    marker.color.g = 1.0
+                    marker.color.b = 0.0
+                    marker.color.a = 1.0
+                elif bug.color == 'blue':
+                    marker.color.r = 0.0
+                    marker.color.g = 0.0
+                    marker.color.b = 1.0
+                    marker.color.a = 1.0
+                elif bug.color == 'orange':
+                    marker.color.r = 1.0
+                    marker.color.g = 0.5
+                    marker.color.b = 0.0
+                    marker.color.a = 1.0
+                elif bug.color == 'purple':
+                    marker.color.r = 0.5
+                    marker.color.g = 0.0
+                    marker.color.b = 0.5
+                    marker.color.a = 1.0
+                self.markers.append(marker)
 
 
 def main():
