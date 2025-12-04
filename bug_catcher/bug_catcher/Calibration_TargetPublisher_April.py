@@ -40,7 +40,7 @@ import numpy as np
 import rclpy
 import tf2_ros
 from bug_catcher.planningscene import PlanningSceneClass, Obstacle
-from bug_catcher_interfaces import BugArray
+from bug_catcher_interfaces.msg import BugArray
 from enum import Enum, auto
 from geometry_msgs.msg import TransformStamped
 from moveit_msgs.msg import PlanningScene
@@ -113,7 +113,7 @@ class CalibrationNode(Node):
         self.mark_pub = self.create_publisher(
             MarkerArray, 'visualization_marker_array', markerQoS
         )
-        self.planscene = self.node.create_publisher(
+        self.planscene = self.create_publisher(
             PlanningScene,
             '/planning_scene',
             10
@@ -262,7 +262,7 @@ class CalibrationNode(Node):
             # Listen and store the tf of base_marker seen by camera:
             try:
                 tf_msg = self.buffer.lookup_transform(
-                    'camera_color_optical_frame',
+                    'Bug_god_color_optical_frame',
                     f'tag_{i}',
                     rclpy.time.Time(),
                     timeout=rclpy.duration.Duration(seconds=1.0),
@@ -326,8 +326,8 @@ class CalibrationNode(Node):
             case State.INITIALIZING:
                 try:
                     tf_msg = self.buffer.lookup_transform(
-                        'camera_color_optical_frame',
-                        'camera_link',
+                        'Bug_god_color_optical_frame',
+                        'Bug_god_link',
                         rclpy.time.Time(),
                         timeout=rclpy.duration.Duration(seconds=1.0),
                     )
@@ -371,7 +371,7 @@ class CalibrationNode(Node):
                     msg = TransformStamped()
                     msg.header.stamp = self.get_clock().now().to_msg()
                     msg.header.frame_id = 'base'
-                    msg.child_frame_id = 'camera_link'
+                    msg.child_frame_id = 'Bug_god_link'
                     # Store Averaged Translation:
                     msg.transform.translation.x = avg_tf[:3, 3][0]
                     msg.transform.translation.y = avg_tf[:3, 3][1]
@@ -392,9 +392,9 @@ class CalibrationNode(Node):
                     self.state = State.PUBLISHING
             case State.PUBLISHING:
                 pass
-                # Update Rviz markers for all colored bugs:
-                self.marker_array.markers = self.markers
-                self.mark_pub.publish(self.marker_array)
+                # # Update Rviz markers for all colored bugs:
+                # self.marker_array.markers = self.markers
+                # self.mark_pub.publish(self.marker_array)
 
     def bug_callback(self, bug_msg):
         """
