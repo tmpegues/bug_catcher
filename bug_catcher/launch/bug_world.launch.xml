@@ -7,13 +7,13 @@
         <arg  name ="robot_ip" value="panda0.robot"/>
     </include>
 
-    <!--Launch the Realsense Camera Node-->
+    <!--Launch the Realsense Camera Node (wrist_camera)-->
     <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py">
-        <!-- Depth stream: 1280x720 at 15 Hz -->
-        <arg name="depth_module.profile" value="1280x720x15"/>
-        <!-- Color stream: 1280x720 at 15 Hz -->
-        <arg name="color_module.profile" value="1280x720x15"/>
+        <arg name="camera_name" value="Bug_god"/>
         <arg name="pointcloud.enable" value="true"/>
+        <arg name="color_width" value="640"/>
+        <arg name="color_height" value="480"/>
+        <arg name="color_fps" value="30"/>
     </include>
 
     <!--Launch the April tag identification Node-->

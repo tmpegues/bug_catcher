@@ -435,51 +435,56 @@ class CalibrationNode(Node):
                 # The bug is not a current target, just track it as a colored marker and publish.
                 marker = Marker()
                 marker.header.frame_id = 'base'
-                marker.header.stamp = bug.pose.stamp        # The bug gets a time stamp.
+                marker.header.stamp = bug.pose.pose.stamp        # The bug gets a time stamp.
                 marker.ns = 'bug_markers'
-                marker.id = i           # Assumes that the ColorDetect sets a unique number.
                 marker.type = Marker.CUBE
                 marker.action = Marker.ADD
 
                 # Set the location of the bug:
-                marker.pose.position.x = bug.pose.x
-                marker.pose.position.y = bug.pose.y
-                marker.pose.position.z = bug.pose.z
-                marker.pose.orientation.x = bug.pose.orientation.x
-                marker.pose.orientation.y = bug.pose.orientation.y
-                marker.pose.orientation.z = bug.pose.orientation.z
-                marker.pose.orientation.w = bug.pose.orientation.w
+                marker.pose.position.x = bug.pose.pose.x
+                marker.pose.position.y = bug.pose.pose.y
+                marker.pose.position.z = bug.pose.pose.z
+                marker.pose.orientation.x = bug.pose.pose.orientation.x
+                marker.pose.orientation.y = bug.pose.pose.orientation.y
+                marker.pose.orientation.z = bug.pose.pose.orientation.z
+                marker.pose.orientation.w = bug.pose.pose.orientation.w
                 marker.scale.x = 0.01
                 marker.scale.y = 0.01
                 marker.scale.z = 0.01
                 marker.lifetime.sec = 0.02
                 marker.lifetime.nanosec = 0
 
+                # Assign a specific id to each marker based on color identity and color:
                 if bug.color == 'red':
                     marker.color.r = 1.0
                     marker.color.g = 0.0
                     marker.color.b = 0.0
                     marker.color.a = 1.0
+                    marker.id = int('1' + str(i))   # Sets a unique number based on color
                 elif bug.color == 'green':
                     marker.color.r = 0.0
                     marker.color.g = 1.0
                     marker.color.b = 0.0
                     marker.color.a = 1.0
+                    marker.id = int('2' + str(i))
                 elif bug.color == 'blue':
                     marker.color.r = 0.0
                     marker.color.g = 0.0
                     marker.color.b = 1.0
                     marker.color.a = 1.0
+                    marker.id = int('3' + str(i))
                 elif bug.color == 'orange':
                     marker.color.r = 1.0
                     marker.color.g = 0.5
                     marker.color.b = 0.0
                     marker.color.a = 1.0
+                    marker.id = int('4' + str(i))
                 elif bug.color == 'purple':
                     marker.color.r = 0.5
                     marker.color.g = 0.0
                     marker.color.b = 0.5
                     marker.color.a = 1.0
+                    marker.id = int('5' + str(i))
                 self.markers.append(marker)
 
 
