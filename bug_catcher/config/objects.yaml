@@ -194,7 +194,7 @@
 - name: "bug_world_base_cpillar"
   pose:
     position:
-      x: 0.7734
+      x: 0.7607
       y: -0.0254
       z: 0.0728
     orientation:
