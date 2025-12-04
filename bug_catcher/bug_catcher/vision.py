@@ -3,7 +3,7 @@ The script implements the Vision class for the 'bug_catcher' package.
 
 It handles the low-level image processing tasks, including loading HSV calibration
 data, generating binary masks for specific colors, detecting contours, and
-tracking objects over time using the SORT algorithm.
+tracking objects over time.
 """
 
 import cv2
@@ -80,16 +80,16 @@ class Vision:
 
         low_hsv, high_hsv = self.colors[color_name]
 
-        # 1. Apply Gaussian Blur to reduce high-frequency noise
+        # 1. Blur
         blurred = cv2.GaussianBlur(frame, (self.blur_ksize, self.blur_ksize), 0)
 
-        # 2. Convert from BGR to HSV color space
+        # 2. HSV
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
 
-        # 3. Apply Thresholding
+        # 3. Threshold
         mask = cv2.inRange(hsv, low_hsv, high_hsv)
 
-        # 4. Morphological Operations
+        # 4. Morphology
         # Open: Removes small white noise (Erosion followed by Dilation)
         # Close: Fills small black holes inside objects (Dilation followed by Erosion)
         kernel = np.ones((5, 5), np.uint8)
@@ -122,11 +122,6 @@ class Vision:
         # Prepare display frame
         display_frame = frame.copy()
 
-        if mask is None:
-            h, w = frame.shape[:2]
-            blank_mask = np.zeros((h, w), dtype=np.uint8)
-            return [], display_frame, blank_mask
-
         # Handle case where color is not found
         if mask is None:
             # Return empty detections, original frame, and a blank mask
@@ -140,35 +135,20 @@ class Vision:
         if not contours:
             return [], display_frame, mask
 
-        # Find the largest contour
-        largest_contour = None
-        max_area = 0
+        valid_contours = []
 
         for cnt in contours:
             area = cv2.contourArea(cnt)
+            if area > 300.0:
+                valid_contours.append(cnt)
+                # Draw raw contour in RED
+                cv2.drawContours(display_frame, [cnt], -1, (0, 0, 255), 2)
 
-            # Filter small noise
-            if area < 500:
-                continue
-
-            # Check if this is the biggest one so far
-            if area > max_area:
-                max_area = area
-                largest_contour = cnt
-
-        # If we found a valid object
-        if largest_contour is not None:
-            # Draw the RAW contour in RED (to show what was detected)
-            cv2.drawContours(display_frame, [largest_contour], -1, (0, 0, 255), 2)
-            return [largest_contour], display_frame, mask
-
-        return [], display_frame, mask
+        return valid_contours, display_frame, mask
 
     def update_tracker(self, detections, frame):
         """
-        Update the SORT tracker with new detections and visualize results.
-
-        Associates current detections with existing tracks to assign persistent IDs.
+        Assign temporary IDs to detected contours and draw visualizations.
 
         Args:
         ----
@@ -184,41 +164,41 @@ class Vision:
         if len(detections) == 0:
             return [], frame
 
-        # Get the contour passed from detect_objects
-        cnt = detections[0]
-
-        # 1. Calculate Center (Centroid) using Moments
-        M = cv2.moments(cnt)
-        if M['m00'] != 0:
-            cx = int(M['m10'] / M['m00'])
-            cy = int(M['m01'] / M['m00'])
-        else:
-            # Fallback to bounding rect center if moments fail
-            x, y, w, h = cv2.boundingRect(cnt)
-            cx = int(x + w / 2)
-            cy = int(y + h / 2)
-
-        # 2. Assign a static ID (since we assume single object)
         obj_id = 0
+        results = []
 
-        # 3. Visualization
-        # Draw the contour in GREEN
-        cv2.drawContours(frame, [cnt], -1, (0, 255, 0), 3)
+        for cnt in detections:
+            # 1. Calculate Center (Centroid)
+            M = cv2.moments(cnt)
+            if M['m00'] != 0:
+                cx = int(M['m10'] / M['m00'])
+                cy = int(M['m01'] / M['m00'])
+            else:
+                # Fallback to bounding rect center if moments fail
+                x, y, w, h = cv2.boundingRect(cnt)
+                cx = int(x + w / 2)
+                cy = int(y + h / 2)
 
-        # Draw the Center Point
-        cv2.circle(frame, (cx, cy), 7, (255, 0, 0), -1)  # Blue dot
-        cv2.circle(frame, (cx, cy), 3, (255, 255, 255), -1)  # White inner dot
+            # 2. Visualization
+            # Draw the contour in GREEN
+            cv2.drawContours(frame, [cnt], -1, (0, 255, 0), 3)
 
-        # Draw ID
-        cv2.putText(
-            frame,
-            f'Target (ID:{obj_id})',
-            (cx - 20, cy - 20),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (0, 255, 0),
-            2,
-        )
+            # Draw the Center Point
+            cv2.circle(frame, (cx, cy), 7, (255, 0, 0), -1)  # Blue dot
+            cv2.circle(frame, (cx, cy), 3, (255, 255, 255), -1)  # White inner dot
 
-        results = [(obj_id, cx, cy)]
+            # Draw ID
+            cv2.putText(
+                frame,
+                f'Target (ID:{obj_id})',
+                (cx - 20, cy - 20),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 255, 0),
+                2,
+            )
+
+            results.append((obj_id, cx, cy))
+            obj_id += 1
+
         return results, frame
