@@ -258,7 +258,6 @@ class CalibrationNode(Node):
         # Retrieve the Camera_Link to Camera_Optical Tf:
 
         for i in range(1, num_tags + 1):
-            self.get_logger().info(f'number of tags: {num_tags}')
             # Listen and store the tf of base_marker seen by camera:
             try:
                 tf_msg = self.buffer.lookup_transform(
@@ -284,10 +283,6 @@ class CalibrationNode(Node):
                     base_camera_tf[i] = self.base_tag[i] @ optical_tag_tf[i]
                 else:
                     base_camera_tf[i] = self.base_tag[i] @ optical_tag_tf[i] @ self.optical_link
-                self.get_logger().info(
-                    f'tag_{i} seen.\nTcamera,tag = {optical_tag_tf[i]}\nTtag,\
-                    camera = {tag_optical_tf[i]}\nTbase_camera = {base_camera_tf[i]}'
-                )
             except (
                 tf2_ros.LookupException,
                 tf2_ros.ExtrapolationException,
@@ -357,7 +352,6 @@ class CalibrationNode(Node):
                 T_base_camera_frame = self.calibrateCamera_April(self.num_april_tags)
                 if T_base_camera_frame is not None:
                     self.calibration_frames.append(T_base_camera_frame)
-                    self.get_logger().info(f' Base to Camera for Frame: {T_base_camera_frame}')
 
                 if len(self.calibration_frames) >= self.max_calibration_frames:
                     # Average transforms
