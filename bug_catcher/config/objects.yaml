@@ -18,9 +18,9 @@
 - name: "bug_world_base"
   pose:
     position:
-      x: 0.425
-      y: 0.0
-      z: 0.0125
+      x: 0.4482
+      y: -0.0254
+      z: 0.0015875
     orientation:
       x: 0.0
       y: 0.0
@@ -28,15 +28,15 @@
       w: 1.0
   size:
     type: 1
-    dimensions: [0.686, 0.991, 0.025]
+    dimensions: [0.6858, 0.9906, 0.003175]
 
 # Right wing of the world base
 - name: "bug_world_base_rwing"
   pose:
     position:
-      x: -0.055
-      y: -0.3315
-      z: 0.0125
+      x: -0.00736
+      y: 0.3061
+      z: 0.0015875
     orientation:
       x: 0.0
       y: 0.0
@@ -44,15 +44,15 @@
       w: 1.0
   size:
     type: 1
-    dimensions: [0.279, 0.33, 0.025]
+    dimensions: [0.2794, 0.3302, 0.003175]
   
 # Left wing of the world base
 - name: "bug_world_base_lwing"
   pose:
     position:
-      x: -0.055
-      y: 0.3315
-      z: 0.0125
+      x: -0.00736
+      y: -0.3569
+      z: 0.0015875
     orientation:
       x: 0.0
       y: 0.0
@@ -60,15 +60,15 @@
       w: 1.0
   size:
     type: 1
-    dimensions: [0.279, 0.33, 0.025]
+    dimensions: [0.2794, 0.3302, 0.003175]
 
 # Right wall of the world:
 - name: "bug_world_base_rwall"
   pose:
     position:
-      x: 0.3
-      y: -0.475
-      z: 0.062
+      x: 0.3127
+      y: 0.4496
+      z: 0.0366
     orientation:
       x: 0.0
       y: 0.0
@@ -76,15 +76,15 @@
       w: 1.0
   size:
     type: 1
-    dimensions: [0.915, 0.038, 0.076]
+    dimensions: [0.915, 0.038, 0.0762]
 
 # Left wall of the world:
 - name: "bug_world_base_lwall"
   pose:
     position:
-      x: 0.3
-      y: 0.475
-      z: 0.062
+      x: 0.3127
+      y: -0.5004
+      z: 0.0366
     orientation:
       x: 0.0
       y: 0.0
@@ -92,15 +92,15 @@
       w: 1.0
   size:
     type: 1
-    dimensions: [0.915, 0.038, 0.076]
+    dimensions: [0.915, 0.038, 0.0762]
 
 #Front wall of the world:
 - name: "bug_world_base_fwall"
   pose:
     position:
-      x: 0.748
-      y: 0.0
-      z: 0.062
+      x: 0.7861
+      y: -0.0254
+      z: 0.0366
     orientation:
       x: 0.0
       y: 0.0
@@ -108,15 +108,15 @@
       w: 1.0
   size:
     type: 1
-    dimensions: [0.038, 0.991, 0.076]
+    dimensions: [0.038, 0.991, 0.0762]
 
 # Rear left wall of the world:
 - name: "bug_world_base_rlwall"
   pose:
     position:
-      x: -0.175
-      y: 0.33
-      z: 0.062
+      x: -0.1623
+      y: -0.3554
+      z: 0.0366
     orientation:
       x: 0.0
       y: 0.0
@@ -124,15 +124,15 @@
       w: 1.0
   size:
     type: 1
-    dimensions: [0.038, 0.33, 0.076]
+    dimensions: [0.038, 0.33, 0.0762]
 
 # Rear right wall of the world:
 - name: "bug_world_base_rrwall"
   pose:
     position:
-      x: -0.175
-      y: -0.33
-      z: 0.062
+      x: -0.1623
+      y: 0.3046
+      z: 0.0366
     orientation:
       x: 0.0
       y: 0.0
@@ -140,15 +140,15 @@
       w: 1.0
   size:
     type: 1
-    dimensions: [0.038,0.33, 0.076]
+    dimensions: [0.038,0.33, 0.0762]
 
 # Rear center wall of the world:
 - name: "bug_world_base_rcwall"
   pose:
     position:
-      x: 0.10
-      y: 0.0
-      z: 0.062
+      x: 0.1127
+      y: -0.0254
+      z: 0.0366
     orientation:
       x: 0.0
       y: 0.0
@@ -156,15 +156,15 @@
       w: 1.0
   size:
     type: 1
-    dimensions: [0.038,0.406, 0.076]
+    dimensions: [0.038,0.406, 0.0762]
 
 # Rear center-right wall of the world:
 - name: "bug_world_base_rcrwall"
   pose:
     position:
-      x: -0.04
-      y: 0.18
-      z: 0.062
+      x: -0.0241
+      y: -0.2054
+      z: 0.0366
     orientation:
       x: 0.0
       y: 0.0
@@ -172,15 +172,15 @@
       w: 1.0
   size:
     type: 1
-    dimensions: [0.25,0.038, 0.076]
+    dimensions: [0.25,0.038, 0.0762]
 
 # Rear center-left wall of the world:
 - name: "bug_world_base_rclwall"
   pose:
     position:
-      x: -0.04
-      y: -0.18
-      z: 0.062
+      x: -0.0241
+      y: 0.1546
+      z: 0.0366
     orientation:
       x: 0.0
       y: 0.0
@@ -188,6 +188,6 @@
       w: 1.0
   size:
     type: 1
-    dimensions: [0.25,0.038, 0.076]
+    dimensions: [0.25,0.038, 0.0762]
 
 

@@ -135,9 +135,9 @@ class CalibrationNode(Node):
         self.base_tag = {}
         for marker_id, (x, y) in self.tag_params.items():
             # Translation
-            t = np.array([x, y, 0.025])  # Z offset
+            t = np.array([x, y, 0.0762])  # Z offset
             # Rotation quaternion:
-            q = [0.0, 0.0, 0.0, 1.0]  # x, y, z, w      # TODO: Does this need flipped for ROS?
+            q = [0.0, 0.0, 0.0, 1.0]  # x, y, z, w
             # Convert quaternion to 4x4 rotation matrix
             mat = quaternion_matrix(q)
             # Set translation:
