@@ -79,16 +79,16 @@ class Vision:
 
         low_hsv, high_hsv = self.colors[color_name]
 
-        # 1. Apply Gaussian Blur to reduce high-frequency noise
+        # 1. Blur
         blurred = cv2.GaussianBlur(frame, (self.blur_ksize, self.blur_ksize), 0)
 
-        # 2. Convert from BGR to HSV color space
+        # 2. HSV
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
 
-        # 3. Apply Thresholding
+        # 3. Threshold
         mask = cv2.inRange(hsv, low_hsv, high_hsv)
 
-        # 4. Morphological Operations
+        # 4. Morphology
         # Open: Removes small white noise (Erosion followed by Dilation)
         # Close: Fills small black holes inside objects (Dilation followed by Erosion)
         kernel = np.ones((5, 5), np.uint8)
@@ -121,11 +121,6 @@ class Vision:
 
         # Prepare display frame
         display_frame = frame.copy()
-
-        if mask is None:
-            h, w = frame.shape[:2]
-            blank_mask = np.zeros((h, w), dtype=np.uint8)
-            return [], display_frame, blank_mask
 
         # Handle case where color is not found
         if mask is None:
@@ -180,9 +175,7 @@ class Vision:
 
     def update_tracker(self, contours, frame):
         """
-        Update the SORT tracker with new detections and visualize results.
-
-        Associates current detections with existing tracks to assign persistent IDs.
+        Assign temporary IDs to detected contours and draw visualizations.
 
         Args:
         ----
