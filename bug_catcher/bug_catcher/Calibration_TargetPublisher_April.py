@@ -53,6 +53,7 @@ from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 from tf2_ros.transform_listener import TransformListener
 from tf_transformations import quaternion_matrix
 from visualization_msgs.msg import Marker, MarkerArray
+from shape_msgs.msg import SolidPrimitive
 
 
 class State(Enum):
@@ -69,7 +70,21 @@ class State(Enum):
 
 
 class CalibrationNode(Node):
+    """
+    Manages camera calibration and bug visualization for the bug catcher robot.
+
+    This node first calibrates the camera's extrinsic parameters by observing AprilTags
+    with known positions in the robot's base frame. It averages the computed transforms
+    over several frames and publishes the result as a static transform.
+
+    After calibration, the node transitions to a publishing mode. In this mode, it
+    subscribes to bug detection data, visualizes non-target bugs as markers in RViz,
+    and updates the MoveIt planning scene with the current target bug as a
+    collision object.
+    """
+
     def __init__(self):
+        """Initialize the Calibration Node."""
         super().__init__('calibration_node')
 
         # Declare tag calibration parameters:
@@ -103,21 +118,14 @@ class CalibrationNode(Node):
 
         # SUBSCRIPTIONS:
         # Subscription for the bug tracking info:
-        self.bug_sub = self.create_subscription(BugArray, '/bugs', self.bug_callback, 10)
+        self.bug_sub = self.create_subscription(
+            BugArray, '/bug_god/bug_array', self.bug_callback, 10
+        )
 
         # PUBLISHERS:
-        markerQoS = QoSProfile(
-            depth=10,
-            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL
-        )
-        self.mark_pub = self.create_publisher(
-            MarkerArray, 'visualization_marker_array', markerQoS
-        )
-        self.planscene = self.create_publisher(
-            PlanningScene,
-            '/planning_scene',
-            10
-        )
+        markerQoS = QoSProfile(depth=10, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
+        self.mark_pub = self.create_publisher(MarkerArray, 'visualization_marker_array', markerQoS)
+        self.planscene = self.create_publisher(PlanningScene, '/planning_scene', 10)
 
         # Timer:
         self.timer_update = self.create_timer(0.05, self.calibrate_target_publisher)
@@ -172,14 +180,15 @@ class CalibrationNode(Node):
         Parameters
         ----------
         T_list : list of np.ndarray
-            A list of 4x4 homogeneous transformation matrices to average. Each matrix represents 
+            A list of 4x4 homogeneous transformation matrices to average. Each matrix represents
             a rigid body transform.
 
         Returns
         -------
         T_avg : np.ndarray or None
-            The 4x4 homogeneous transformation matrix representing the averaged transform. 
+            The 4x4 homogeneous transformation matrix representing the averaged transform.
             Returns None if the input list is empty.
+
         """
         if not T_list:
             return None
@@ -221,6 +230,7 @@ class CalibrationNode(Node):
         -------
         Tinv : np.ndarray
             The 4x4 homogeneous transformation matrix representing the inverse transform.
+
         """
         R_ = T[:3, :3]
         t = T[:3, 3]
@@ -234,7 +244,7 @@ class CalibrationNode(Node):
         Compute the averaged base-to-camera transform using observed AprilTags.
 
         This function listens to the transforms between the camera's optical frame
-        and AprilTags in the scene,and then averages all detected base-to-camera transforms over 
+        and AprilTags in the scene,and then averages all detected base-to-camera transforms over
         the tags seen in the current frame.
 
         Parameters
@@ -249,6 +259,7 @@ class CalibrationNode(Node):
             A 4x4 numpy array representing the averaged homogeneous transform
             from the robot base to the camera_link frame. Returns None if no
             tags are successfully observed.
+
         """
         # Get the position of the camera to marker, then invert:
         base_camera_tf = {}  # Initialize a dictionary to hold transforms from base to camera.
@@ -296,7 +307,7 @@ class CalibrationNode(Node):
 
     def calibrate_target_publisher(self):
         """
-        Manages system calibration and transitions to publishing bug locations in Rviz.
+        Manage system calibration and transitions to publishing bug locations in Rviz.
 
         This function is intended to run periodically in a timer callback and performs the
         following tasks based on it's state:
@@ -392,7 +403,7 @@ class CalibrationNode(Node):
 
     def bug_callback(self, bug_msg):
         """
-        Callback for updating detected bug positions and the planning scene.
+        Update detected bug positions and the planning scene.
 
         Parameters
         ----------
@@ -406,6 +417,7 @@ class CalibrationNode(Node):
                 The estimated pose of the bug in the camera/base frame.
             - color : str
                 The bug's color label (e.g., 'red', 'blue', ...).
+
         """
         # Remove the last target bug if it exists:
         if self.last_target_bug is None:
@@ -417,27 +429,32 @@ class CalibrationNode(Node):
         self.markers = []
 
         # Break apart each bug message: is_target: 1-> CollisionObject | 0-> Marker
-        for i, bug in enumerate(bug_msg):
+        for i, bug in enumerate(bug_msg.bugs):
             # Check if the bug is the target or not:
-            if bug.is_target is True:
-                # Set the bug as a collision object and republish planning scene.
-                size = {'type': 1, 'dimensions': [0.01, 0.01, 0.01]}  # Set to a box for all bugs.
-                current_target_bug = Obstacle('target', bug.pose.pose, size)
+
+            if bug.target is True:
+                prim = SolidPrimitive()
+                prim.type = SolidPrimitive.BOX
+
+                prim.dimensions = [0.01, 0.01, 0.01]
+
+                current_target_bug = Obstacle('target_bug', bug.pose.pose, prim)
                 self.ps.add_obstacle(current_target_bug)
                 self.last_target_bug = current_target_bug
             else:
                 # The bug is not a current target, just track it as a colored marker and publish.
                 marker = Marker()
                 marker.header.frame_id = 'base'
-                marker.header.stamp = bug.pose.pose.stamp        # The bug gets a time stamp.
+                marker.header.stamp = bug.pose.header.stamp  # The bug gets a time stamp.
                 marker.ns = 'bug_markers'
                 marker.type = Marker.CUBE
                 marker.action = Marker.ADD
 
                 # Set the location of the bug:
-                marker.pose.position.x = bug.pose.pose.x
-                marker.pose.position.y = bug.pose.pose.y
-                marker.pose.position.z = bug.pose.pose.z
+                marker.pose.position.x = bug.pose.pose.position.x
+                marker.pose.position.y = bug.pose.pose.position.y
+                marker.pose.position.z = bug.pose.pose.position.z
+
                 marker.pose.orientation.x = bug.pose.pose.orientation.x
                 marker.pose.orientation.y = bug.pose.pose.orientation.y
                 marker.pose.orientation.z = bug.pose.pose.orientation.z
@@ -454,7 +471,7 @@ class CalibrationNode(Node):
                     marker.color.g = 0.0
                     marker.color.b = 0.0
                     marker.color.a = 1.0
-                    marker.id = int('1' + str(i))   # Sets a unique number based on color
+                    marker.id = int('1' + str(i))  # Sets a unique number based on color
                 elif bug.color == 'green':
                     marker.color.r = 0.0
                     marker.color.g = 1.0
@@ -483,6 +500,7 @@ class CalibrationNode(Node):
 
 
 def main():
+    """Run the main function for the Calibration Node."""
     rclpy.init()
     node = CalibrationNode()
     rclpy.spin(node)

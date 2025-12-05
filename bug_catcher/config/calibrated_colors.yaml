@@ -11,13 +11,13 @@
 - color: green
   hsv:
     high:
-    - 74
-    - 250
-    - 255
+    - 93
+    - 213
+    - 143
     low:
-    - 39
-    - 30
-    - 109
+    - 80
+    - 38
+    - 61
 - color: purple
   hsv:
     high:
@@ -31,13 +31,13 @@
 - color: red
   hsv:
     high:
-    - 8
+    - 180
     - 255
     - 255
     low:
-    - 0
-    - 65
-    - 0
+    - 132
+    - 74
+    - 141
 - color: orange
   hsv:
     high:

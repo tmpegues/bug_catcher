@@ -54,7 +54,7 @@ setup(
             'catcher_node = bug_catcher.catcher_node:main',
             'pick_node = bug_catcher.pick_node:main',
             'calibration_node = bug_catcher.Calibration_TargetPublisher_April:main',
-            'color_detection_node = bug_catcher.ColorDetection:main',
+            'target_decision_node = bug_catcher.TargetDecision:main',
         ],
     },
 )

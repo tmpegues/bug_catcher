@@ -1,9 +1,8 @@
 """
 The script implements the Vision class for the 'bug_catcher' package.
 
-It handles the low-level image processing tasks, including loading HSV calibration
-data, generating binary masks for specific colors, detecting contours, and
-tracking objects over time.
+It handles the low-level image processing tasks, including loading HSV calibration data,
+generating binary masks for specific colors, detecting contours, and tracking objects over time.
 """
 
 import cv2
@@ -28,7 +27,7 @@ class Vision:
     def __init__(self):
         """Initialize the Vision processor."""
         # Kernel size for blurring
-        self.blur_ksize = 11
+        self.blur_ksize = 13
 
         # Dictionary to store loaded color profiles
         self.colors = {}
@@ -80,21 +79,22 @@ class Vision:
 
         low_hsv, high_hsv = self.colors[color_name]
 
-        # 1. Blur
+        # 1. Apply Gaussian Blur to reduce high-frequency noise
         blurred = cv2.GaussianBlur(frame, (self.blur_ksize, self.blur_ksize), 0)
 
-        # 2. HSV
+        # 2. Convert from BGR to HSV color space
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
 
-        # 3. Threshold
+        # 3. Apply Thresholding
         mask = cv2.inRange(hsv, low_hsv, high_hsv)
 
-        # 4. Morphology
+        # 4. Morphological Operations
         # Open: Removes small white noise (Erosion followed by Dilation)
         # Close: Fills small black holes inside objects (Dilation followed by Erosion)
         kernel = np.ones((5, 5), np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        # mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
         return mask
 
@@ -122,6 +122,11 @@ class Vision:
         # Prepare display frame
         display_frame = frame.copy()
 
+        if mask is None:
+            h, w = frame.shape[:2]
+            blank_mask = np.zeros((h, w), dtype=np.uint8)
+            return [], display_frame, blank_mask
+
         # Handle case where color is not found
         if mask is None:
             # Return empty detections, original frame, and a blank mask
@@ -132,27 +137,56 @@ class Vision:
         # Find external contours
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        if not contours:
-            return [], display_frame, mask
+        # Finding the largest contour
 
-        valid_contours = []
+        largest_contour = None
+        max_area = 0
+
+        # Find the permissible contours list
+        permissible_contour = []
 
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            if area > 300.0:
-                valid_contours.append(cnt)
-                # Draw raw contour in RED
-                cv2.drawContours(display_frame, [cnt], -1, (0, 0, 255), 2)
 
-        return valid_contours, display_frame, mask
+            # Filter small noise
+            if area < 100:
+                continue
 
-    def update_tracker(self, detections, frame):
+            # Check if this is the biggest one so far
+            if area > max_area:
+                max_area = area
+                largest_contour = cnt
+
+        # after finding the largest contour, find the permissible contours
+        if largest_contour is not None:
+            for cnt in contours:
+                area = cv2.contourArea(cnt)
+
+                print(area)
+                if (
+                    area < cv2.contourArea(largest_contour) + 50
+                    and area > cv2.contourArea(largest_contour) - 50
+                ):
+                    permissible_contour.append(cnt)
+
+        # If we found a valid object
+        if len(permissible_contour) > 0:
+            # Draw the RAW contour in RED (to show what was detected)
+            for cont in permissible_contour:
+                cv2.drawContours(display_frame, [cont], -1, (0, 0, 255), 2)
+            return permissible_contour, display_frame, mask
+
+        return [], display_frame, mask
+
+    def update_tracker(self, contours, frame):
         """
-        Assign temporary IDs to detected contours and draw visualizations.
+        Update the SORT tracker with new detections and visualize results.
+
+        Associates current detections with existing tracks to assign persistent IDs.
 
         Args:
         ----
-        detections (np.ndarray): Array of current frame detections.
+        contours (np.ndarray): Array of contours.
         frame (np.ndarray): The frame to draw tracking visualizations on.
 
         Returns
@@ -161,26 +195,20 @@ class Vision:
         frame (np.ndarray): The frame with tracking bounding boxes and IDs drawn.
 
         """
-        if len(detections) == 0:
+        if len(contours) == 0:
             return [], frame
 
         obj_id = 0
+
         results = []
 
-        for cnt in detections:
-            # 1. Calculate Center (Centroid)
+        # 1. Calculate Center (Centroid) using Moments
+        for cnt in contours:
             M = cv2.moments(cnt)
             if M['m00'] != 0:
                 cx = int(M['m10'] / M['m00'])
                 cy = int(M['m01'] / M['m00'])
-            else:
-                # Fallback to bounding rect center if moments fail
-                x, y, w, h = cv2.boundingRect(cnt)
-                cx = int(x + w / 2)
-                cy = int(y + h / 2)
 
-            # 2. Visualization
-            # Draw the contour in GREEN
             cv2.drawContours(frame, [cnt], -1, (0, 255, 0), 3)
 
             # Draw the Center Point
@@ -197,8 +225,13 @@ class Vision:
                 (0, 255, 0),
                 2,
             )
-
             results.append((obj_id, cx, cy))
             obj_id += 1
+
+        """else:
+            # Fallback to bounding rect center if moments fail
+            x, y, w, h = cv2.boundingRect(cnt)
+            cx = int(x + w / 2)
+            cy = int(y + h / 2)"""
 
         return results, frame

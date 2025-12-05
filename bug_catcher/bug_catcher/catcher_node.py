@@ -1,22 +1,33 @@
 """
 The script implements the 'catcher_node' within the 'bug_catcher' package.
 
+It acts as the physical execution unit. Since the 'color_detection_node' now
+handles coordinate transformation (Camera -> Base), this node simply receives
+the world-frame coordinates and executes the motion plan.
+
 Subscribers
 -----------
-+ /bug_poses (geometry_msgs.msg.PoseArray): Receives lists of detected bug poses
-                                            from the vision system.
++ /wrist_camera/target_bug (bug_catcher_interfaces.msg.BugInfo):
+    Receives the target bug pose ALREADY transformed to the Robot Base Frame.
 
 Services/Actions
 ----------------
 + /move_group (moveit_msgs.action.MoveGroup): For trajectory planning.
 + /execute_trajectory (moveit_msgs.action.ExecuteTrajectory): For robot movement.
 
+Parameters
+----------
++ bug_dimensions (double array): [x, y, z] size of the bug for collision model.
++ grasp_height_z (double): The Z height (meters) relative to base to perform the grasp.
++ loop_execution (bool): If true, the node will reset 'is_busy' to catch multiple bugs.
+
 """
 
 from bug_catcher.motionplanninginterface import MotionPlanningInterface
 from bug_catcher.planningscene import Obstacle
 
-from geometry_msgs.msg import PoseArray, PoseStamped
+from bug_catcher_interfaces.msg import BugInfo
+
 
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
@@ -25,173 +36,138 @@ from rclpy.node import Node
 
 from shape_msgs.msg import SolidPrimitive
 
-import tf2_geometry_msgs  # noqa: F401 (Registers PoseStamped for TF2)
-
-from tf2_ros import Buffer, TransformException, TransformListener
-
 
 class CatcherNode(Node):
-    """Bridge the camera frame to the robot's base frame."""
+    """Executes pick-and-place operations based on pre-processed vision data."""
 
     def __init__(self):
         """Initialize the Catcher, connecting to interfaces."""
         super().__init__('catcher_node')
 
+        # Initialize MotionPlanningInterface
         self.mpi = MotionPlanningInterface(self)
 
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
+        # =========================================
+        # 1. Parameter Declarations
+        # =========================================
 
-        self.setup_aruco()
-        self.setup_bug_color()
+        # Dimensions of the Hexbug: Length, Width, Height (meters)
+        self.declare_parameter('bug_dimensions', [0.045, 0.015, 0.015])
+        self.bug_dims = self.get_parameter('bug_dimensions').value
+
+        # The physical height of the table/grasping plane relative to robot base
+        # This replaces the hardcoded "0.02"
+        self.declare_parameter('grasp_height_z', 0.02)
+        self.grasp_z = self.get_parameter('grasp_height_z').value
+
+        # TODO: Continuous execution?
+        self.declare_parameter('loop_execution', False)
+        self.loop_execution = self.get_parameter('loop_execution').value
+
+        self.declare_parameter('target_bug_name', 'target_bug')
+        self.target_bug_name = self.get_parameter('target_bug_name').value
+
+        # =========================================
+        # 2. Setup Subscribers
+        # =========================================
+        self.setup_bug_listener()
 
         # State flags
         self.is_busy = False
-        self.target_bug_name = 'target_bug'
-        # Hardcoded size: 5cm x 2cm x 2cm
-        self.bug_size = [0.05, 0.02, 0.02]
 
-        self.get_logger().info('Catcher Node: initialization complete. Waiting for bugs...')
+        self.get_logger().info('Catcher Node: Ready. Listening to /wrist_camera/target_bug...')
 
-    def setup_aruco(self):
-        """
-        Set up aruco detection for the arena.
-
-        Currently a placeholder. Future implementations will use this to determine
-        the robot's location relative to the arena or to identify drop-off zones.
-        """
-        pass
-
-    def setup_bug_color(self):
-        """
-        Set up subscribers for the color detection system.
-
-        Uses a MutuallyExclusiveCallbackGroup to ensure the callback does not
-        block the main thread or interfere with MoveIt action clients running
-        in the MultiThreadedExecutor.
-        """
+    def setup_bug_listener(self):
+        """Set up subscriber for the Wrist Camera pose data."""
         cb_group = MutuallyExclusiveCallbackGroup()
 
-        # Subscribe to PoseArray from the colordetection node
         self.bugs_in_frame_listener = self.create_subscription(
-            PoseArray, '/bug_poses', self.bug_callback, 10, callback_group=cb_group
+            BugInfo, '/wrist_camera/target_bug', self.bug_callback, 10, callback_group=cb_group
         )
-
-    def transform_pose(self, input_pose, from_frame, to_frame='base'):
-        """
-        Transform a pose from the Camera Frame to the Robot Base Frame.
-
-        Args:
-        ----
-        input_pose (geometry_msgs.msg.Pose): The raw pose from vision.
-        from_frame (str): The frame ID of the camera ('camera_color_optical_frame').
-        to_frame (str, default='base'): The target frame ID ('base').
-
-        Returns
-        -------
-        (geometry_msgs.msg.Pose): The transformed pose, or None if TF failed.
-
-        """
-        try:
-            pose_stamped = PoseStamped()
-            pose_stamped.header.frame_id = from_frame
-            # Request the transform at the current time
-            pose_stamped.header.stamp = self.get_clock().now().to_msg()
-            pose_stamped.pose = input_pose
-
-            # Perform the transform with a 1-second timeout to allow buffer catch-up
-            output_pose_stamped = self.tf_buffer.transform(
-                pose_stamped, to_frame, timeout=rclpy.duration.Duration(seconds=1.0)
-            )
-            return output_pose_stamped.pose
-        except TransformException as e:
-            self.get_logger().warn(f'TF Failed: {e}')
-            return None
 
     def spawn_bug_in_rviz(self, pose):
         """
         Add the detected bug to the MoveIt Planning Scene.
-
-        This creates a collision object in the simulation/planning environment,
-        allowing MoveIt to plan grasp trajectories towards it.
 
         Args:
         ----
         pose (geometry_msgs.msg.Pose): The pose of the bug in the planning frame.
 
         """
-        # Define the shape (Box)
+        # Define the shape (Box) based on parameters
         prim = SolidPrimitive()
         prim.type = SolidPrimitive.BOX
-        prim.dimensions = self.bug_size
+        prim.dimensions = self.bug_dims
 
         # Create the Obstacle object
         bug_obstacle = Obstacle(self.target_bug_name, pose, prim)
 
-        # Add to the scene via the MotionPlanningInterface
         self.mpi.ps.add_obstacle(bug_obstacle)
         self.get_logger().info(f'Added {self.target_bug_name} to Planning Scene')
 
     async def bug_callback(self, msg):
         """
-        Handle vision-detected bugs.
-
-        This function executes the core logic pipeline:
-        1. Parse vision data.
-        2. Transform coordinates to the robot frame.
-        3. Update the environment model (spawn object).
-        4. Trigger the grasp sequence.
+        Handle incoming target bug from the Wrist Camera.
 
         Args:
         ----
-        msg (geometry_msgs.msg.PoseArray): List of bug poses from vision.
+        msg (bug_catcher_interfaces.msg.BugInfo): The target bug info.
 
         """
+        # Prevent re-entry if the robot is already moving
         if self.is_busy:
             return
-        if len(msg.poses) == 0:
+
+        # Valid check for BugInfo (it's a single object, not a list)
+        if msg is None:
             return
 
         self.is_busy = True
-        self.get_logger().info('Bug detected! Deciding what to do...')
+        self.get_logger().info('Wrist Camera lock acquired! executing catch...')
 
-        # === 1. Extract Data ===
-        camera_pose = msg.poses[0]
-        source_frame = msg.header.frame_id
+        # 1. Extract Pose
+        target_pose = msg.pose.pose
 
-        # === 2. Transform Coordinate ===
-        robot_frame_pose = self.transform_pose(camera_pose, source_frame, to_frame='base')
+        # 2. Apply Z-Height Constraint
+        # Vision depth estimation can be noisy. We trust the physical measurement
+        # of the table height (parameter) more than the camera's Z estimation.
+        target_pose.position.z = self.grasp_z
 
-        if robot_frame_pose is None:
-            self.get_logger().error('TF Transform failed. Waiting for TF tree...')
-            self.is_busy = False
-            return
+        self.get_logger().info(
+            f'Target Confirmed: x={target_pose.position.x:.2f}, '
+            f'y={target_pose.position.y:.2f}, z={target_pose.position.z:.2f}'
+        )
 
-        # === 3. Spawn in RViz ===
-        self.spawn_bug_in_rviz(robot_frame_pose)
+        # 3. Spawn in RViz
+        self.spawn_bug_in_rviz(target_pose)
 
-        # === 4. Execute Catch Sequence ===
+        # 4. Execute Catch Sequence
         await self.execute_catch_sequence()
 
-        # Catch multiple bugs continuously
-        # self.is_busy = False
+        # 5. Loop Control
+        if self.loop_execution:
+            self.is_busy = False
+            self.get_logger().info('Ready for next target...')
+        else:
+            self.get_logger().info('Task Complete. Idling.')
 
     async def execute_catch_sequence(self):
-        """
-        Execute the physical motion sequence to catch the bug.
-
-        Steps:
-        1. Move to Home/Ready.
-        2. Open Gripper.
-        3. Move to Pre-Grasp (Above object).
-        4. Move to Grasp (At object).
-        5. Close Gripper.
-        6. Lift object.
-        """
+        """Execute the physical motion sequence to catch the bug."""
         bug = self.target_bug_name
+
+        # Ensure RobotState is receiving data
+        while rclpy.ok():
+            current_joints = self.mpi.rs.get_angles()
+            if current_joints is not None and len(current_joints.name) > 0:
+                self.get_logger().info('Robot State connected! Starting sequence.')
+                break
+            await rclpy.sleep(0.1)  # Wait 100ms
 
         self.get_logger().info('--- Sequence: Get Ready ---')
         if not await self.mpi.GetReady():
+            # If planning fails (e.g. out of reach), we abort and reset busy flag
+            self.get_logger().error('Failed to reach Ready pose.')
+            self.is_busy = False
             return
 
         self.get_logger().info('--- Sequence: Open Gripper ---')
@@ -200,18 +176,23 @@ class CatcherNode(Node):
 
         self.get_logger().info(f'--- Sequence: Move Above {bug} ---')
         if not await self.mpi.MoveAboveObject(bug):
+            self.get_logger().error('Target out of reach or planning failed.')
+            self.is_busy = False
             return
 
         self.get_logger().info(f'--- Sequence: Move Down to {bug} ---')
         if not await self.mpi.MoveDownToObject(bug):
+            self.is_busy = False
             return
 
         self.get_logger().info('--- Sequence: Close Gripper (Pick) ---')
         if not await self.mpi.CloseGripper(bug):
+            self.is_busy = False
             return
 
         self.get_logger().info('--- Sequence: Lift Up ---')
         if not await self.mpi.LiftOffTable():
+            self.is_busy = False
             return
 
         self.get_logger().info('SUCCESS: Bug Caught!')
@@ -223,6 +204,8 @@ def main(args=None):
 
     catcher_node = CatcherNode()
 
+    # Use MultiThreadedExecutor to allow MoveIt actions (which use callbacks)
+    # to run in parallel with the main node logic.
     executor = MultiThreadedExecutor()
     executor.add_node(catcher_node)
 

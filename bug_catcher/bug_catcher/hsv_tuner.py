@@ -106,6 +106,7 @@ class RosHSVTuner(Node):
         try:
             # Convert ROS Image message to OpenCV BGR format
             self.current_frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+            self.current_frame = self.current_frame[50:650, 350:975]
         except (FileNotFoundError, ValueError, KeyError, IOError) as e:
             self.get_logger().error(f'CvBridge error: {e}')
 

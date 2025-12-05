@@ -20,8 +20,8 @@
     <node pkg="tf2_ros" exec="static_transform_publisher" name="wrist_cam_broadcaster"
           args="0.4 0.0 0.5 3.14159 0 -1.57079 base wrist_camera_color_optical_frame" />
 
-    <!--Load the Color Detection Node-->
-    <node pkg="bug_catcher" exec="color_detection_node" name="color_detection_node" output="screen">
+    <!--Load the Target Decision Node-->
+    <node pkg="bug_catcher" exec="target_decision_node" name="target_decision_node" output="screen">
         <remap from="/camera/camera/color/image_raw" to="/wrist_camera/color/image_raw"/>
         <remap from="/camera/camera/color/camera_info" to="/wrist_camera/color/camera_info"/>
         <param name="default_color" value="red"/>

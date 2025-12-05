@@ -2,19 +2,19 @@
     <arg name="demo" default="True" description="bool: true will launch the Franka demo.launch.py. False will open rviz, but not the demo"/>
 
     <!--Launch the Franka Rviz Configuration-->
-    <include file="$(find-pkg-share franka_fer_moveit_config)/launch/demo.launch.py" if="$(eval $(var demo)==True)"/>
+    <!-- <include file="$(find-pkg-share franka_fer_moveit_config)/launch/demo.launch.py" if="$(eval $(var demo)==True)"/>
     <include file="$(find-pkg-share franka_fer_moveit_config)/launch/moveit_rviz.launch.py" if="$(eval $(var demo)==False)">
         <arg  name ="robot_ip" value="panda0.robot"/>
-    </include>
+    </include> -->
 
     <!--Launch the Realsense Camera Node (wrist_camera)-->
-    <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py">
+    <!-- <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py">
         <arg name="camera_name" value="Bug_god"/>
         <arg name="pointcloud.enable" value="true"/>
         <arg name="color_width" value="640"/>
         <arg name="color_height" value="480"/>
         <arg name="color_fps" value="30"/>
-    </include>
+    </include> -->
 
     <!--Launch the April tag identification Node-->
     <node pkg="apriltag_ros" exec="apriltag_node" name="apriltag">
@@ -30,9 +30,4 @@
         <param name="filename" value="$(find-pkg-share bug_catcher)/config/calibration_parameters.yaml"/>
     </node>
 
-    <!--Load the planning scene and await action service call-->
-    <node pkg="bug_catcher" exec="pick_node">
-        <!-- Load AprilTag tag family -->
-        <param name="filename" value="$(find-pkg-share bug_catcher)/config/objects.yaml"/>
-    </node>
 </launch>
