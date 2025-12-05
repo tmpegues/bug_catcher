@@ -1,8 +1,9 @@
 """
 The script implements the Vision class for the 'bug_catcher' package.
 
-It handles the low-level image processing tasks, including loading HSV calibration data,
-generating binary masks for specific colors, detecting contours, and tracking objects over time.
+It handles the low-level image processing tasks, including loading HSV calibration
+data, generating binary masks for specific colors, detecting contours, and
+tracking objects over time using the SORT algorithm.
 """
 
 import cv2
