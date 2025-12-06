@@ -30,9 +30,8 @@
     </include>
 
     <!--Static Transform Publisher from wrist to camera-->
-    <include file="$(find-pkg-share bug_catcher)/launch/load_wrist_tf.launch.py"/>
-    <node pkg="tf2_ros" exec="static_transform_publisher" name="wrist_cam_tf"
-          args="0.05 0.0 0.05 0 0 0 fer_hand_tcp wrist_camera_link" />
+    <node pkg="tf2_ros" exec="static_transform_publisher" name="wrist_cam_broadcaster"
+          args="0.4 0.0 0.5 3.14159 0 -1.57079 base wrist_camera_color_optical_frame" />
 
     <!--Launch the April tag identification Node-->
     <node pkg="apriltag_ros" exec="apriltag_node" name="apriltag">
