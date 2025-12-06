@@ -27,14 +27,18 @@ from bug_catcher.motionplanninginterface import MotionPlanningInterface
 from bug_catcher.planningscene import Obstacle
 
 from bug_catcher_interfaces.msg import BugInfo
-
-
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from tf2_ros.transform_listener import TransformListener
 
 from shape_msgs.msg import SolidPrimitive
+from tf2_ros.buffer import Buffer
+from bug_catcher_interfaces.msg import BugArray
+from visualization_msgs.msg import Marker, MarkerArray
+from moveit_msgs.msg import PlanningScene
+from rclpy.qos import QoSDurabilityPolicy, QoSProfile
 
 
 class CatcherNode(Node):
@@ -46,6 +50,13 @@ class CatcherNode(Node):
 
         # Initialize MotionPlanningInterface
         self.mpi = MotionPlanningInterface(self)
+
+        # Declare the filename from the launchfile:
+        self.declare_parameter('file', 'objects.yaml')
+        filename = self.get_parameter('file').value
+
+        # Load the Scene at Init:
+        self.mpi.ps.load_scene(filename)
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -78,6 +89,20 @@ class CatcherNode(Node):
         # State flags
         self.is_busy = False
 
+        # Subscription for the bug tracking info:
+        self.bug_sub = self.create_subscription(
+            BugArray, '/bug_god/bug_array', self.bug_callback, 10
+        )
+
+        # PUBLISHERS:
+        markerQoS = QoSProfile(depth=10, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
+        self.mark_pub = self.create_publisher(MarkerArray, 'visualization_marker_array', markerQoS)
+        self.planscene = self.create_publisher(PlanningScene, '/planning_scene', 10)
+
+        # Establish the required connections and trackers for updating the planningscene each call.
+        # Save the last target bug for removal each update:
+        self.last_target_bug = None
+
         self.get_logger().info('Catcher Node: Ready. Listening to /wrist_camera/target_bug...')
 
     def setup_bug_listener(self):
@@ -108,51 +133,51 @@ class CatcherNode(Node):
         self.mpi.ps.add_obstacle(bug_obstacle)
         self.get_logger().info(f'Added {self.target_bug_name} to Planning Scene')
 
-    async def bug_callback(self, msg):
-        """
-        Handle incoming target bug from the Wrist Camera.
+    # async def bug_callback(self, msg):
+    #     """
+    #     Handle incoming target bug from the Wrist Camera.
 
-        Args:
-        ----
-        msg (bug_catcher_interfaces.msg.BugInfo): The target bug info.
+    #     Args:
+    #     ----
+    #     msg (bug_catcher_interfaces.msg.BugInfo): The target bug info.
 
-        """
-        # Prevent re-entry if the robot is already moving
-        if self.is_busy:
-            return
+    #     """
+    #     # Prevent re-entry if the robot is already moving
+    #     if self.is_busy:
+    #         return
 
-        # Valid check for BugInfo (it's a single object, not a list)
-        if msg is None:
-            return
+    #     # Valid check for BugInfo (it's a single object, not a list)
+    #     if msg is None:
+    #         return
 
-        self.is_busy = True
-        self.get_logger().info('Wrist Camera lock acquired! executing catch...')
+    #     self.is_busy = True
+    #     self.get_logger().info('Wrist Camera lock acquired! executing catch...')
 
-        # 1. Extract Pose
-        target_pose = msg.pose.pose
+    #     # 1. Extract Pose
+    #     target_pose = msg.pose.pose
 
-        # 2. Apply Z-Height Constraint
-        # Vision depth estimation can be noisy. We trust the physical measurement
-        # of the table height (parameter) more than the camera's Z estimation.
-        target_pose.position.z = self.grasp_z
+    #     # 2. Apply Z-Height Constraint
+    #     # Vision depth estimation can be noisy. We trust the physical measurement
+    #     # of the table height (parameter) more than the camera's Z estimation.
+    #     target_pose.position.z = self.grasp_z
 
-        self.get_logger().info(
-            f'Target Confirmed: x={target_pose.position.x:.2f}, '
-            f'y={target_pose.position.y:.2f}, z={target_pose.position.z:.2f}'
-        )
+    #     self.get_logger().info(
+    #         f'Target Confirmed: x={target_pose.position.x:.2f}, '
+    #         f'y={target_pose.position.y:.2f}, z={target_pose.position.z:.2f}'
+    #     )
 
-        # 3. Spawn in RViz
-        self.spawn_bug_in_rviz(target_pose)
+    #     # 3. Spawn in RViz
+    #     self.spawn_bug_in_rviz(target_pose)
 
-        # 4. Execute Catch Sequence
-        await self.execute_catch_sequence()
+    #     # 4. Execute Catch Sequence
+    #     await self.execute_catch_sequence()
 
-        # 5. Loop Control
-        if self.loop_execution:
-            self.is_busy = False
-            self.get_logger().info('Ready for next target...')
-        else:
-            self.get_logger().info('Task Complete. Idling.')
+    #     # 5. Loop Control
+    #     if self.loop_execution:
+    #         self.is_busy = False
+    #         self.get_logger().info('Ready for next target...')
+    #     else:
+    #         self.get_logger().info('Task Complete. Idling.')
 
     async def execute_catch_sequence(self):
         """Execute the physical motion sequence to catch the bug."""
@@ -199,6 +224,127 @@ class CatcherNode(Node):
             return
 
         self.get_logger().info('SUCCESS: Bug Caught!')
+
+    def bug_callback(self, bug_msg):
+        """
+        Update detected bug positions and the planning scene.
+
+        Parameters
+        ----------
+        bug_msg :
+            A list/array of bug detection messages. Each bug contains:
+            - id: int8
+                The unique identifier for that colored bug.
+            - is_target : bool
+                True if the bug should be treated as the active collision target.
+            - pose : geometry_msgs/PoseStamped (or similar)
+                The estimated pose of the bug in the camera/base frame.
+            - color : str
+                The bug's color label (e.g., 'red', 'blue', ...).
+
+        """
+        # Remove the last target bug if it exists:
+        if self.last_target_bug is None:
+            pass
+        else:
+            self.mpi.ps.remove_obstacle(self.last_target_bug)
+            self.last_target_bug = None
+        # Create an array of markers to build the arena:
+        self.marker_array = MarkerArray()
+        self.markers = []
+
+        # Break apart each bug message: is_target: 1-> CollisionObject | 0-> Marker
+        for i, bug in enumerate(bug_msg.bugs):
+            # Check if the bug is the target or not:
+            marker = Marker()
+            marker.header.frame_id = 'base'
+            marker.header.stamp = bug.pose.header.stamp  # The bug gets a time stamp.
+            marker.ns = 'bug_markers'
+
+            if bug.target is True:
+                prim = SolidPrimitive()
+                prim.type = SolidPrimitive.BOX
+
+                prim.dimensions = [0.03, 0.03, 0.03]
+
+                current_target_bug = Obstacle('target_bug', bug.pose.pose, prim)
+                self.mpi.ps.add_obstacle(current_target_bug)
+                self.last_target_bug = current_target_bug
+
+                marker.type = Marker.TEXT_VIEW_FACING
+                marker.action = Marker.ADD
+                marker.pose.position.x = bug.pose.pose.position.x
+                marker.pose.position.y = bug.pose.pose.position.y
+                marker.pose.position.z = bug.pose.pose.position.z
+                marker.pose.orientation.x = 0.0
+                marker.pose.orientation.y = 0.0
+                marker.pose.orientation.z = 0.0
+                marker.pose.orientation.w = 1.0
+                marker.scale.z = 1.0  # Only scale z is used for text
+                marker.color.r = 1.0
+                marker.color.g = 0.0
+                marker.color.b = 0.0
+                marker.color.a = 1.0
+                marker.text = 'Target'
+                marker.lifetime.sec = 0
+                marker.lifetime.nanosec = 20000000
+
+            else:
+                # The bug is not a current target, just track it as a colored marker and publish.
+                marker.type = Marker.CUBE
+                marker.action = Marker.ADD
+
+                # Set the location of the bug:
+                marker.pose.position.x = bug.pose.pose.position.x
+                marker.pose.position.y = bug.pose.pose.position.y
+                marker.pose.position.z = bug.pose.pose.position.z
+
+                marker.pose.orientation.x = bug.pose.pose.orientation.x
+                marker.pose.orientation.y = bug.pose.pose.orientation.y
+                marker.pose.orientation.z = bug.pose.pose.orientation.z
+                marker.pose.orientation.w = bug.pose.pose.orientation.w
+                marker.scale.x = 0.03
+                marker.scale.y = 0.03
+                marker.scale.z = 0.03
+                marker.lifetime.sec = 0
+                marker.lifetime.nanosec = 20000000
+                self.markers.append(marker)
+
+                # Assign a specific id to each marker based on color identity and color:
+                if bug.color == 'red':
+                    marker.color.r = 1.0
+                    marker.color.g = 0.0
+                    marker.color.b = 0.0
+                    marker.color.a = 1.0
+                    marker.id = int('1' + str(i))  # Sets a unique number based on color
+                elif bug.color == 'green':
+                    marker.color.r = 0.0
+                    marker.color.g = 1.0
+                    marker.color.b = 0.0
+                    marker.color.a = 1.0
+                    marker.id = int('2' + str(i))
+                elif bug.color == 'blue':
+                    marker.color.r = 0.0
+                    marker.color.g = 0.0
+                    marker.color.b = 1.0
+                    marker.color.a = 1.0
+                    marker.id = int('3' + str(i))
+                elif bug.color == 'orange':
+                    marker.color.r = 1.0
+                    marker.color.g = 0.5
+                    marker.color.b = 0.0
+                    marker.color.a = 1.0
+                    marker.id = int('4' + str(i))
+                elif bug.color == 'purple':
+                    marker.color.r = 0.5
+                    marker.color.g = 0.0
+                    marker.color.b = 0.5
+                    marker.color.a = 1.0
+                    marker.id = int('5' + str(i))
+                self.markers.append(marker)
+        # Update Rviz markers for all colored bugs:
+        self.marker_array.markers = self.markers
+        self.mark_pub.publish(self.marker_array)
 
 
 def main(args=None):

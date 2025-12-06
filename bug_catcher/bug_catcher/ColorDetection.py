@@ -2,9 +2,9 @@
 The script implements the 'color_detection_node' within the 'bug_catcher' package.
 
 It acts as the central vision system processing two camera streams:
-1. Sky Cam ("BugGod"): Detects ALL bugs, transforms them to Base Frame,
+1. Sky Cam ("bug_god"): Detects ALL bugs, transforms them to Base Frame,
    identifies the target based on color and proximity to gripper, and publishes a BugArray.
-2. Wrist Cam: Focuses on the specific target color for precise servoing.
+2. Wrist Cam: Focuses on the specific target color for precise location identification.
 
 Publishers
 ----------
@@ -17,7 +17,7 @@ Publishers
 
 Subscribers
 -----------
-+ /camera/buggod/color/image_raw: Sky Cam Feed.
++ /camera/bug_god/color/image_raw: Sky Cam Feed.
 + /camera/wrist_camera/color/image_raw: Wrist Cam Feed.
 + /target_color (std_msgs.msg.String): Receives commands to switch the detection target.
 
@@ -104,19 +104,19 @@ class ColorDetection(Node):
         self.wrist_intrinsics = None
 
         # ==================================
-        # 2. Communication - BugGod (SkyCam)
+        # 2. Communication - bug_god (SkyCam)
         # ==================================
         sky_cb_group = MutuallyExclusiveCallbackGroup()
         self.sky_image_sub = self.create_subscription(
             Image,
-            '/camera/buggod/color/image_raw',
+            '/camera/bug_god/color/image_raw',
             self.sky_image_cb,
             10,
             callback_group=sky_cb_group,
         )
         self.sky_info_sub = self.create_subscription(
             CameraInfo,
-            '/camera/buggod/color/camera_info',
+            '/camera/bug_god/color/camera_info',
             self.sky_info_cb,
             10,
             callback_group=sky_cb_group,

@@ -204,14 +204,12 @@ class BugMover:
         if not wrist_cam:
             while dist_to_bug >= 0.01 and success is True:
                 step_pose = mv._distance_scaler(
-                step_pose = mv._distance_scaler(
                     p1=self.node.mpi.rs.get_ee_pose(), p2=bug.pose.pose
                 )
                 success = self.node.mpi.GoTo(step_pose, cart_only=True)
         # TMP TODO: Add section for checking wrist camera
         elif wrist_cam:
             while dist_to_bug >= 0.01 and success is True:
-                step_pose = mv._distance_scaler(
                 step_pose = mv._distance_scaler(
                     p1=self.node.mpi.rs.get_ee_pose(), p2=bug.pose.pose
                 )

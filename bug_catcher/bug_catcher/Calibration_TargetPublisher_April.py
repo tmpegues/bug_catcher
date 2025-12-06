@@ -272,7 +272,7 @@ class CalibrationNode(Node):
             # Listen and store the tf of base_marker seen by camera:
             try:
                 tf_msg = self.buffer.lookup_transform(
-                    'Bug_god_color_optical_frame',
+                    'bug_god_color_optical_frame',
                     f'tag_{i}',
                     rclpy.time.Time(),
                     timeout=rclpy.duration.Duration(seconds=1.0),
@@ -332,8 +332,8 @@ class CalibrationNode(Node):
             case State.INITIALIZING:
                 try:
                     tf_msg = self.buffer.lookup_transform(
-                        'Bug_god_color_optical_frame',
-                        'Bug_god_link',
+                        'bug_god_color_optical_frame',
+                        'bug_god_link',
                         rclpy.time.Time(),
                         timeout=rclpy.duration.Duration(seconds=1.0),
                     )
@@ -376,7 +376,7 @@ class CalibrationNode(Node):
                     msg = TransformStamped()
                     msg.header.stamp = self.get_clock().now().to_msg()
                     msg.header.frame_id = 'base'
-                    msg.child_frame_id = 'Bug_god_link'
+                    msg.child_frame_id = 'bug_god_link'
                     # Store Averaged Translation:
                     msg.transform.translation.x = avg_tf[:3, 3][0]
                     msg.transform.translation.y = avg_tf[:3, 3][1]

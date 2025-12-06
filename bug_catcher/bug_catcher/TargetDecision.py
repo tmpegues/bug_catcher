@@ -2,7 +2,7 @@
 The script implements the 'target_decision_node' within the 'bug_catcher' package.
 
 It acts as the central vision system processing two camera streams:
-1. Sky Cam ("BugGod"): Detects ALL bugs, transforms them to the Base Frame,
+1. Sky Cam ("bug_god"): Detects ALL bugs, transforms them to the Base Frame,
    identifies the target based on color and proximity to the gripper, and publishes
    a BugArray containing all seen bugs.
 2. Wrist Cam: Focuses purely on the specific target color for precise servoing
@@ -19,7 +19,7 @@ Publishers
 
 Subscribers
 -----------
-+ /camera/buggod/color/image_raw (sensor_msgs.msg.Image): Sky Cam Feed.
++ /camera/bug_god/color/image_raw (sensor_msgs.msg.Image): Sky Cam Feed.
 + /camera/wrist_camera/color/image_raw (sensor_msgs.msg.Image): Wrist Cam Feed.
 + /target_color (std_msgs.msg.String): Receives commands to switch the detection target.
 
@@ -28,39 +28,63 @@ Parameters
 + default_color (string, default='red'): The initial color to detect upon startup.
 + base_frame (string, default='base'): The robot's root frame ID.
 + gripper_frame (string, default='fer_hand_tcp'): The end-effector frame ID.
+calibration.tags.tag_<i>.x : float
+calibration.tags.tag_<i>.y : float
+    Known AprilTag positions in the base frame.
 
 """
 
 import os
-
 from ament_index_python.packages import get_package_share_directory
-
 from bug_catcher.sort import Sort
 from bug_catcher.vision import Vision
-
 from bug_catcher_interfaces.msg import BugArray, BugInfo
-
 import cv2
-
 from cv_bridge import CvBridge, CvBridgeError
-
 from geometry_msgs.msg import Pose, PoseStamped
-
 import numpy as np
-
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.node import Node
-
 from sensor_msgs.msg import CameraInfo, Image
-
 from std_msgs.msg import String
-
 import tf2_ros
+from enum import Enum, auto
+from geometry_msgs.msg import TransformStamped
+from scipy.spatial.transform import Rotation as R
+from tf2_ros import TransformBroadcaster
+from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
+from tf2_ros.transform_listener import TransformListener
+from tf_transformations import quaternion_matrix
+from tf2_ros.buffer import Buffer
+
+
+class State(Enum):
+    """
+    Current state of the system.
+
+    Determines what the main timer function should be doing on each
+        iteration for the physics of the brick.
+    """
+
+    INITIALIZING = auto()
+    CALIBRATING = auto()
+    PUBLISHING = auto()
 
 
 class TargetDecision(Node):
-    """The Target Decision Node."""
+    """
+    Manages camera calibration and bug visualization for the bug catcher robot.
+
+    This node first calibrates the camera's extrinsic parameters by observing AprilTags
+    with known positions in the robot's base frame. It averages the computed transforms
+    over several frames and publishes the result as a static transform.
+
+    After calibration, the node transitions to a publishing mode. In this mode, it
+    subscribes to bug detection data, visualizes non-target bugs as markers in RViz,
+    and updates the MoveIt planning scene with the current target bug as a
+    collision object.
+    """
 
     def __init__(self):
         """Initialize the TargetDecision node."""
@@ -69,18 +93,46 @@ class TargetDecision(Node):
         # ==================================
         # 1. Parameters & Setup
         # ==================================
+        # TODO: These need to be added into a config file. They currently are only using defualt values.
         self.declare_parameter('default_color', 'red')
         self.target_color = self.get_parameter('default_color').value
-
         self.declare_parameter('base_frame', 'base')
         self.base_frame = self.get_parameter('base_frame').value
-
         self.declare_parameter('gripper_frame', 'fer_hand_tcp')
         self.gripper_frame = self.get_parameter('gripper_frame').value
 
+        # Declare tag calibration parameters:
+        self.declare_parameter('calibration.tags.tag_1.x', -0.1143)
+        self.declare_parameter('calibration.tags.tag_1.y', -0.4572)
+        self.declare_parameter('calibration.tags.tag_2.x', -0.1143)
+        self.declare_parameter('calibration.tags.tag_2.y', 0.4064)
+        self.declare_parameter('calibration.tags.tag_3.x', 0.6858)
+        self.declare_parameter('calibration.tags.tag_3.y', 0.4064)
+        self.declare_parameter('calibration.tags.tag_4.x', 0.6858)
+        self.declare_parameter('calibration.tags.tag_4.y', -0.4572)
+        # Set the tag parameter values:
+        self.tag_params = {
+            1: (
+                self.get_parameter('calibration.tags.tag_2.x').get_parameter_value().double_value,
+                self.get_parameter('calibration.tags.tag_2.y').get_parameter_value().double_value,
+            ),
+            2: (
+                self.get_parameter('calibration.tags.tag_3.x').get_parameter_value().double_value,
+                self.get_parameter('calibration.tags.tag_3.y').get_parameter_value().double_value,
+            ),
+            3: (
+                self.get_parameter('calibration.tags.tag_4.x').get_parameter_value().double_value,
+                self.get_parameter('calibration.tags.tag_4.y').get_parameter_value().double_value,
+            ),
+            4: (
+                self.get_parameter('calibration.tags.tag_1.x').get_parameter_value().double_value,
+                self.get_parameter('calibration.tags.tag_1.y').get_parameter_value().double_value,
+            ),
+        }
+
         # TF Buffer
-        self.tf_buffer = tf2_ros.Buffer()
-        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
 
         # Vision Setup
         self.vision = Vision()
@@ -91,24 +143,9 @@ class TargetDecision(Node):
         self.wrist_intrinsics = None
 
         # ==================================
-        # 2. Sky Cam (BugGod) Setup
+        # 2. Sky Cam (bug_god) Setup
         # ==================================
-        sky_cb_group = MutuallyExclusiveCallbackGroup()
-        self.sky_image_sub = self.create_subscription(
-            Image,
-            '/camera/buggod/color/image_raw',
-            self.sky_image_cb,
-            10,
-            callback_group=sky_cb_group,
-        )
-        self.sky_info_sub = self.create_subscription(
-            CameraInfo,
-            '/camera/buggod/color/camera_info',
-            self.sky_info_cb,
-            10,
-            callback_group=sky_cb_group,
-        )
-
+        # PUBLISHERS:
         self.bug_array_pub = self.create_publisher(BugArray, '/bug_god/bug_array', 10)
         self.sky_debug_pub = self.create_publisher(Image, '/bug_god/debug_view', 10)
         self.sky_mask_pub = self.create_publisher(Image, '/bug_god/mask_view', 10)
@@ -116,22 +153,6 @@ class TargetDecision(Node):
         # ==================================
         # 3. Wrist Cam Setup
         # ==================================
-        wrist_cb_group = MutuallyExclusiveCallbackGroup()
-        self.wrist_image_sub = self.create_subscription(
-            Image,
-            '/camera/wrist_camera/color/image_raw',
-            self.wrist_image_cb,
-            10,
-            callback_group=wrist_cb_group,
-        )
-        self.wrist_info_sub = self.create_subscription(
-            CameraInfo,
-            '/camera/wrist_camera/color/camera_info',
-            self.wrist_info_cb,
-            10,
-            callback_group=wrist_cb_group,
-        )
-
         self.wrist_target_pub = self.create_publisher(BugInfo, '/wrist_camera/target_bug', 10)
         self.wrist_debug_pub = self.create_publisher(Image, '/wrist_camera/debug_view', 10)
         self.wrist_mask_pub = self.create_publisher(Image, '/wrist_camera/mask_view', 10)
@@ -142,6 +163,41 @@ class TargetDecision(Node):
         self.command_sub = self.create_subscription(
             String, '/target_color', self.command_callback, 10
         )
+
+        # ==================================
+        # 5. Initial System Integration:
+        # ==================================
+        # Timer:
+        self.timer_update = self.create_timer(0.05, self.calibrate_target_publisher)
+
+        # Broadcasters:
+        self.static_broadcaster = StaticTransformBroadcaster(self)
+        self.dynamic_broadcaster = TransformBroadcaster(self)
+
+        # Create and save the matrix version of the base to marker trasforms for static recall:
+        self.base_tag = {}
+        for marker_id, (x, y) in self.tag_params.items():
+            # Translation
+            t = np.array([x, y, 0.0762])  # Z offset
+            # Rotation quaternion:
+            q = [0.0, 0.0, 0.0, 1.0]  # x, y, z, w
+            # Convert quaternion to 4x4 rotation matrix
+            mat = quaternion_matrix(q)
+            # Set translation:
+            mat[0:3, 3] = t
+            # Store in dictionary for easy lookup:
+            self.base_tag[marker_id] = mat
+
+        # Establish Calibration Averaging Variables:
+        self.num_april_tags = 4
+        self.calibration_done = False
+        self.calibration_frames = []
+        self.max_calibration_frames = 360  # Average over 300 frames (10 seconds)
+        self.state = State.INITIALIZING
+
+        # Translate Y-coordinate to match ROS REP-103 frame as OpenCV has a flipped y orientation.
+        # X_ros =  Y_cv, Y_ros = -X_cv, Z_ros = Z_cv
+        self.Tcv_to_ros = np.array([[0, 1, 0, 0], [-1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
 
         self.get_logger().info(f'Node started. Current Target: [{self.target_color}]')
 
@@ -319,6 +375,271 @@ class TargetDecision(Node):
 
         return new_pose
 
+    def average_transforms(self, T_list):
+        """
+        Compute the average of a list of 4x4 homogeneous transformation matrices.
+
+        This function computes the mean transform from a list of rigid-body
+        transformations. Translations are averaged component-wise, and rotations
+        are averaged using Singular Value Decomposition (SVD) to ensure a valid rotation matrix.
+
+        Parameters
+        ----------
+        T_list : list of np.ndarray
+            A list of 4x4 homogeneous transformation matrices to average. Each matrix represents
+            a rigid body transform.
+
+        Returns
+        -------
+        T_avg : np.ndarray or None
+            The 4x4 homogeneous transformation matrix representing the averaged transform.
+            Returns None if the input list is empty.
+
+        """
+        if not T_list:
+            return None
+
+        # Average the translations:
+        translations = np.array([T[:3, 3] for T in T_list])
+        avg_translation = translations.mean(axis=0)
+
+        # Average the rotation:
+        rot_mats = np.array([T[:3, :3] for T in T_list])
+        # #################### Begin_Citation [NK2] ###################
+        # Compute rotation average via SVD:
+        M = rot_mats.sum(axis=0)
+        U, _, Vt = np.linalg.svd(M)
+        R_avg = U @ Vt
+        # Fix possible reflection
+        if np.linalg.det(R_avg) < 0:
+            U[:, -1] *= -1
+            R_avg = U @ Vt
+        # ################### End_Citation [NK2] #######################
+
+        # Construct Transform Matrix of average:
+        T_avg = np.eye(4)
+        T_avg[:3, :3] = R_avg
+        T_avg[:3, 3] = avg_translation
+
+        return T_avg
+
+    def invert_tf(self, T):
+        """
+        Compute the inverse of a 4x4 homogeneous transformation matrix.
+
+        Parameters
+        ----------
+        T : np.ndarray
+            A 4x4 homogeneous transformation matrix representing a rigid body transform.
+
+        Returns
+        -------
+        Tinv : np.ndarray
+            The 4x4 homogeneous transformation matrix representing the inverse transform.
+
+        """
+        R_ = T[:3, :3]
+        t = T[:3, 3]
+        Tinv = np.eye(4)
+        Tinv[:3, :3] = R_.T
+        Tinv[:3, 3] = -R_.T @ t
+        return Tinv
+
+    def calibrateCamera_April(self, num_tags):
+        """
+        Compute the averaged base-to-camera transform using observed AprilTags.
+
+        This function listens to the transforms between the camera's optical frame
+        and AprilTags in the scene,and then averages all detected base-to-camera transforms over
+        the tags seen in the current frame.
+
+        Parameters
+        ----------
+        num_tags : int
+            The number of AprilTags to consider for calibration. Tags are assumed
+            to be named sequentially as 'tag_1', 'tag_2', ..., 'tag_{num_tags}'.
+
+        Returns
+        -------
+        np.ndarray or None
+            A 4x4 numpy array representing the averaged homogeneous transform
+            from the robot base to the camera_link frame. Returns None if no
+            tags are successfully observed.
+
+        """
+        # Get the position of the camera to marker, then invert:
+        base_camera_tf = {}  # Initialize a dictionary to hold transforms from base to camera.
+        optical_tag_tf = {}  # Initialize the transfrom of camera to tag
+        tag_optical_tf = {}  # Initialize the transform of the tag to camera.
+
+        # Retrieve the Camera_Link to Camera_Optical Tf:
+
+        for i in range(1, num_tags + 1):
+            # Listen and store the tf of base_marker seen by camera:
+            try:
+                tf_msg = self.tf_buffer.lookup_transform(
+                    'bug_god_color_optical_frame',
+                    f'tag_{i}',
+                    rclpy.time.Time(),
+                    timeout=rclpy.duration.Duration(seconds=1.0),
+                )
+                # Convert the transform message to a matrix and store.
+                t = tf_msg.transform.translation
+                q = tf_msg.transform.rotation
+                Rm = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
+                T_optical_tag = np.eye(4)
+                T_optical_tag[:3, :3] = Rm
+                T_optical_tag[:3, 3] = [t.x, t.y, t.z]
+                optical_tag_tf[i] = T_optical_tag
+
+                # Get the inverse of the camera to tag:
+                tag_optical_tf[i] = self.invert_tf(optical_tag_tf[i])
+
+                # Multiply and store transform of base to camera to later average:
+                if type(self.optical_link) is type(None):
+                    base_camera_tf[i] = self.base_tag[i] @ optical_tag_tf[i]
+                else:
+                    base_camera_tf[i] = self.base_tag[i] @ optical_tag_tf[i] @ self.optical_link
+            except (
+                tf2_ros.LookupException,
+                tf2_ros.ExtrapolationException,
+                tf2_ros.ConnectivityException,
+            ) as e:
+                self.get_logger().info(f'Transform for April tag_{i} not available: {e}')
+        # Average all base to camera translations and rotations to get better calibration.
+        T_list = list(base_camera_tf.values())
+        T_base_camera_avg = self.average_transforms(T_list)
+        return T_base_camera_avg
+
+    # -----------------------------------------------------------------
+    # Timer Callback for state system:
+    # -----------------------------------------------------------------
+    def calibrate_target_publisher(self):
+        """
+        Manage system calibration and transitions to publishing bug locations in Rviz.
+
+        This function is intended to run periodically in a timer callback and performs the
+        following tasks based on it's state:
+
+        1. INITIALIZING:
+            - Waits for camera_link to camera_color_optical_frame transform to become available.
+            - Converts the transform to a 4x4 matrix and applies the CV to ROS frame adjustment.
+            - Stores the optical_link transform and transitions to CALIBRATING state.
+
+        2. CALIBRATING:
+            - Collects base to camera transforms using AprilTags observed in the current frame.
+            - Accumulates transforms over multiple frames.
+            - Once enough frames are collected, averages the transforms.
+            - Publishes the averaged base to camera_link transform as a static TF.
+            - Marks calibration as complete and transitions to PUBLISHING state.
+
+        3. PUBLISHING:
+            - Updates RViz markers for all tracked bugs updated in the subscriber callback.
+            - Publishes markers to the visualization_marker_array topic.
+        """
+        match self.state:
+            case State.INITIALIZING:
+                try:
+                    tf_msg = self.tf_buffer.lookup_transform(
+                        'bug_god_color_optical_frame',
+                        'bug_god_link',
+                        rclpy.time.Time(),
+                        timeout=rclpy.duration.Duration(seconds=1.0),
+                    )
+                    # Convert the transform message to a matrix and store.
+                    t = tf_msg.transform.translation
+                    q = tf_msg.transform.rotation
+                    Rm = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
+                    # Save this transform statically in the node:
+                    optical_link = np.eye(4)
+                    optical_link[:3, :3] = Rm
+                    optical_link[:3, 3] = [t.x, t.y, t.z]
+
+                    # Transform the Camera_Link to Ros:
+                    optical_link = self.Tcv_to_ros @ optical_link
+                    self.optical_link = optical_link
+                    self.state = State.CALIBRATING
+                    self.get_logger().info('Camera tf available')
+                except (
+                    tf2_ros.LookupException,
+                    tf2_ros.ExtrapolationException,
+                    tf2_ros.ConnectivityException,
+                ) as e:
+                    self.get_logger().info(f'Transform for camera still unavailable: {e}')
+            case State.CALIBRATING:
+                # Perform a static callibration at Launch:
+                # Compute per-frame avearge base->camera transform:
+                T_base_camera_frame = self.calibrateCamera_April(self.num_april_tags)
+                if T_base_camera_frame is not None:
+                    self.calibration_frames.append(T_base_camera_frame)
+
+                if len(self.calibration_frames) >= self.max_calibration_frames:
+                    # Average transforms
+                    avg_tf = self.average_transforms(self.calibration_frames)
+
+                    # Create the publication message:
+                    # Convert to quaternion for publication message ([x, y, z, w]):
+                    q = R.from_matrix(avg_tf[:3, :3]).as_quat()
+
+                    # Publish TF: base -> camera_link
+                    msg = TransformStamped()
+                    msg.header.stamp = self.get_clock().now().to_msg()
+                    msg.header.frame_id = 'base'
+                    msg.child_frame_id = 'bug_god_link'
+                    # Store Averaged Translation:
+                    msg.transform.translation.x = avg_tf[:3, 3][0]
+                    msg.transform.translation.y = avg_tf[:3, 3][1]
+                    msg.transform.translation.z = avg_tf[:3, 3][2]
+                    self.get_logger().info(f'{msg.transform.translation}')
+                    # Store Averaged Quaternion:
+                    msg.transform.rotation.x = q[0]
+                    msg.transform.rotation.y = q[1]
+                    msg.transform.rotation.z = q[2]
+                    msg.transform.rotation.w = q[3]
+                    self.get_logger().info(f'{msg.transform.rotation}')
+                    # Publish the Averaged base to camera_link transform.
+                    self.static_broadcaster.sendTransform(msg)
+                    self.calibration_done = True
+                    self.get_logger().info('Static calibration complete.')
+
+                    # Calibration is complete, so switch to Publishing Task:
+                    self.state = State.PUBLISHING
+
+                    # Create the subscribers to start listening for bug detection:
+                    sky_cb_group = MutuallyExclusiveCallbackGroup()
+                    self.sky_image_sub = self.create_subscription(
+                        Image,
+                        '/camera/bug_god/color/image_raw',
+                        self.sky_image_cb,
+                        10,
+                        callback_group=sky_cb_group,
+                    )
+                    self.sky_info_sub = self.create_subscription(
+                        CameraInfo,
+                        '/camera/bug_god/color/camera_info',
+                        self.sky_info_cb,
+                        10,
+                        callback_group=sky_cb_group,
+                    )
+                    wrist_cb_group = MutuallyExclusiveCallbackGroup()
+                    self.wrist_image_sub = self.create_subscription(
+                        Image,
+                        '/camera/wrist_camera/color/image_raw',
+                        self.wrist_image_cb,
+                        10,
+                        callback_group=wrist_cb_group,
+                    )
+                    self.wrist_info_sub = self.create_subscription(
+                        CameraInfo,
+                        '/camera/wrist_camera/color/camera_info',
+                        self.wrist_info_cb,
+                        10,
+                        callback_group=wrist_cb_group,
+                    )
+            case State.PUBLISHING:
+                pass
+                # All publishing will take place in the image callbacks
+
     # -----------------------------------------------------------------
     # Callback Functions
     # -----------------------------------------------------------------
@@ -374,8 +695,8 @@ class TargetDecision(Node):
 
         try:
             frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-            # TODO: Crop to remove borders
-            frame = frame[50:650, 350:975]
+            # # TODO: Crop to remove borders
+            # frame = frame[50:650, 350:975]
         except CvBridgeError as e:
             self.get_logger().error(f'CV Bridge Error: {e}')
             return

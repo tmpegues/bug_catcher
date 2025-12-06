@@ -7,9 +7,7 @@ tracking objects over time using the SORT algorithm.
 """
 
 import cv2
-
 import numpy as np
-
 import yaml
 
 
@@ -158,7 +156,7 @@ class Vision:
             for cnt in contours:
                 area = cv2.contourArea(cnt)
 
-                print(area)
+                #print(area)
                 if (
                     area < cv2.contourArea(largest_contour) + 50
                     and area > cv2.contourArea(largest_contour) - 50
