@@ -23,3 +23,4 @@
 }
 [15]https://www.youtube.com/watch?v=6e94ZnYnO_U
 [NK2] https://www.askpython.com/python/examples/singular-value-decomposition
+[NK3] https://pyimagesearch.com/2021/01/19/image-masking-with-opencv/

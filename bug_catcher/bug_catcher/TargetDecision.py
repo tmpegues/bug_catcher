@@ -695,10 +695,53 @@ class TargetDecision(Node):
 
         try:
             frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-            # TODO: Mask image to crop out unwanted filtering regions.
-            # frame = frame[50:650, 350:975]
+            # Mask image to crop out unwanted filtering regions. (Tags will be established by now)
+            # ####################### Begin_Citation [NK3] ###################
+            mask = np.zeros(frame.shape[:2], dtype="uint8")
+
+            # Get the pixel locations of the top left and bottom right of the mask positions
+            #   This will map to markers 2 and 4.
+            tf_msg = self.tf_buffer.lookup_transform(
+                'bug_god_color_optical_frame',
+                'tag_2',
+                rclpy.time.Time(),
+                timeout=rclpy.duration.Duration(seconds=1.0),
+            )
+            # Convert the transform message to a matrix and store.
+            t_left = tf_msg.transform.translation
+            tf_msg = self.tf_buffer.lookup_transform(
+                'bug_god_color_optical_frame',
+                'tag_4',
+                rclpy.time.Time(),
+                timeout=rclpy.duration.Duration(seconds=1.0),
+            )
+            # Convert the transform message to a matrix and store.
+            t_right = tf_msg.transform.translation
+
+            # Calculate the 3D Position:
+            # Camera intrinsics matrix
+            K = self.sky_intrinsics
+            fx = K[0, 0]
+            fy = K[1, 1]
+            cx = K[0, 2]
+            cy = K[1, 2]
+            # 3D point in camera frame (meters)
+            X_L, Y_L, Z_L = t_left.x, t_left.y, t_left.z
+            X_R, Y_R, Z_R = t_right.x, t_right.y, t_right.z
+            # Left Tag location:
+            u_L = int(fx * (X_L / Z_L) + cx)
+            v_L = int(fy * (Y_L / Z_L) + cy)
+            # Right Tag Location:
+            u_R = int(fx * (X_R / Z_R) + cx)
+            v_R = int(fy * (Y_R / Z_R) + cy)
+
+            # Draw the mask to be within the tags:
+            cv2.rectangle(mask, (u_L, v_L), (u_R, v_R), 255, -1)
+
+            frame = cv2.bitwise_and(frame, frame, mask=mask)
+            # ####################### End_Citation [NK3] #####################
         except CvBridgeError as e:
-            self.get_logger().error(f'CV Bridge Error: {e}')
+            self.get_logger().error(f'CV Bridge Error: {e}, unable to extract mask corners!')
             return
 
         # 1. Get Transform Once per Frame
