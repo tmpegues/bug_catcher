@@ -106,11 +106,10 @@ class TargetDecision(Node):
         # 1. Parameters & Setup
         # ==================================
         # Declare the config parameters:
-        self.declare_parameter('default_color', 'red')
+        self.declare_parameter('default_color', 'blue')
         self.declare_parameter('base_frame', 'base')
         self.declare_parameter('gripper_frame', 'fer_hand_tcp')
-        self.declare_parameter('color_path',
-                               '$(find-pkg-share bug_catcher)/config/calibration_parameters.yaml')
+        self.declare_parameter('color_file', 'calibrated_colors.yaml')
 
         # Declare tag calibration parameters:
         self.declare_parameter('calibration.tags.tag_1.x', -0.1143)
@@ -123,10 +122,10 @@ class TargetDecision(Node):
         self.declare_parameter('calibration.tags.tag_4.y', -0.4572)
 
         # Set the tag and config parameter values:
-        self.target_color = self.get_parameter('default_color').get_parameter_value().value
-        self.base_frame = self.get_parameter('base_frame').get_parameter_value().value
-        self.gripper_frame = self.get_parameter('gripper_frame').get_parameter_value().value
-        self.color_path = self.get_parameter('color_path').get_parameter_value().value
+        self.target_color = self.get_parameter('default_color').value
+        self.base_frame = self.get_parameter('base_frame').value
+        self.gripper_frame = self.get_parameter('gripper_frame').value
+        self.color_file = self.get_parameter('color_file').value
         self.tag_params = {
             1: (
                 self.get_parameter('calibration.tags.tag_2.x').get_parameter_value().double_value,
@@ -222,8 +221,10 @@ class TargetDecision(Node):
     # -----------------------------------------------------------------
     def _load_calibrated_colors(self):
         """Load calibrated colors from YAML file."""
+        pkg_share = get_package_share_directory('bug_catcher')
+        color_path = os.path.join(pkg_share, 'config', self.color_file)
         try:
-            self.vision.load_calibration(self.color_path)
+            self.vision.load_calibration(color_path)
             if self.target_color not in self.vision.colors:
                 self.get_logger().warn(
                     f"Default color '{self.target_color}' not found in YAML! "
@@ -488,7 +489,6 @@ class TargetDecision(Node):
                     'bug_god_color_optical_frame',
                     f'tag_{i}',
                     rclpy.time.Time(),
-                    timeout=rclpy.duration.Duration(seconds=1.0),
                 )
                 # Convert the transform message to a matrix and store.
                 t = tf_msg.transform.translation
@@ -551,7 +551,6 @@ class TargetDecision(Node):
                         'bug_god_color_optical_frame',
                         'bug_god_link',
                         rclpy.time.Time(),
-                        timeout=rclpy.duration.Duration(seconds=1.0),
                     )
                     # Convert the transform message to a matrix and store.
                     t = tf_msg.transform.translation
@@ -712,7 +711,6 @@ class TargetDecision(Node):
                 'bug_god_color_optical_frame',
                 'tag_2',
                 rclpy.time.Time(),
-                timeout=rclpy.duration.Duration(seconds=1.0),
             )
             # Convert the transform message to a matrix and store.
             t_left = tf_msg.transform.translation
@@ -720,7 +718,6 @@ class TargetDecision(Node):
                 'bug_god_color_optical_frame',
                 'tag_4',
                 rclpy.time.Time(),
-                timeout=rclpy.duration.Duration(seconds=1.0),
             )
             # Convert the transform message to a matrix and store.
             t_right = tf_msg.transform.translation
@@ -937,16 +934,13 @@ class TargetDecision(Node):
 
 def main(args=None):
     """Run the main function for the ColorDetection node."""
-    try:
-        rclpy.init(args=args)
-        node = TargetDecision()
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+    rclpy.init()
+    node = TargetDecision()
+    rclpy.spin(node)
+    # Destroy all nodes and windows:
+    cv2.destroyAllWindows()
+    node.destroy_node()
+    rclpy.shutdown()
 
 
 if __name__ == '__main__':

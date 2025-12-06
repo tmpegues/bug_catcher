@@ -1,22 +1,23 @@
 /**:
   ros__parameters:
     # Target Detection Parameters:
-    default_color: red
+    default_color: blue
     base_frame: base
     gripper_frame: fer_hand_tcp
-    color_path: $(find-pkg-share bug_catcher)/config/calibration_parameters.yaml
+    color_path: calibrated_colors.yaml
+
     # Calibration parameters in meters (m)
     calibration:
       tags:
         tag_1:
-          x: -0.1106
-          y: 0.446024
+          x: -0.1143
+          y: 0.4572
         tag_2:
-          x: 0.7657
-          y: 0.446024
+          x: 0.76835
+          y: 0.4475
         tag_3:
-          x: 0.7657
-          y: -0.514604
+          x: 0.76835
+          y: -0.5207
         tag_4:
-          x: -0.1106
-          y: -0.514604
+          x: -0.1143
+          y: -0.5207
