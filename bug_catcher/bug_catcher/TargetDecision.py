@@ -35,28 +35,40 @@ calibration.tags.tag_<i>.y : float
 """
 
 import os
+from enum import Enum, auto
+
 from ament_index_python.packages import get_package_share_directory
+
 from bug_catcher.sort import Sort
 from bug_catcher.vision import Vision
+
 from bug_catcher_interfaces.msg import BugArray, BugInfo
+
 import cv2
+
 from cv_bridge import CvBridge, CvBridgeError
-from geometry_msgs.msg import Pose, PoseStamped
+
+from geometry_msgs.msg import Pose, PoseStamped, TransformStamped
+
 import numpy as np
+
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.node import Node
-from sensor_msgs.msg import CameraInfo, Image
-from std_msgs.msg import String
-import tf2_ros
-from enum import Enum, auto
-from geometry_msgs.msg import TransformStamped
+
 from scipy.spatial.transform import Rotation as R
+
+from sensor_msgs.msg import CameraInfo, Image
+
+from std_msgs.msg import String
+
+import tf2_ros
 from tf2_ros import TransformBroadcaster
+from tf2_ros.buffer import Buffer
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 from tf2_ros.transform_listener import TransformListener
+
 from tf_transformations import quaternion_matrix
-from tf2_ros.buffer import Buffer
 
 
 class State(Enum):
@@ -93,7 +105,7 @@ class TargetDecision(Node):
         # ==================================
         # 1. Parameters & Setup
         # ==================================
-        # TODO: These need to be added into a config file. They currently are only using defualt values.
+        # TODO: Need to be added into a config file. They currently are only using default values.
         self.declare_parameter('default_color', 'red')
         self.target_color = self.get_parameter('default_color').value
         self.declare_parameter('base_frame', 'base')
@@ -697,7 +709,7 @@ class TargetDecision(Node):
             frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
             # Mask image to crop out unwanted filtering regions. (Tags will be established by now)
             # ####################### Begin_Citation [NK3] ###################
-            mask = np.zeros(frame.shape[:2], dtype="uint8")
+            mask = np.zeros(frame.shape[:2], dtype='uint8')
 
             # Get the pixel locations of the top left and bottom right of the mask positions
             #   This will map to markers 2 and 4.
@@ -842,6 +854,9 @@ class TargetDecision(Node):
         bug_array.bugs = all_detected_bugs
         self.bug_array_pub.publish(bug_array)
         self.sky_debug_pub.publish(self.bridge.cv2_to_imgmsg(final_debug_frame, encoding='bgr8'))
+
+        if mask is not None:
+            self.sky_mask_pub.publish(self.bridge.cv2_to_imgmsg(mask, encoding='mono8'))
 
     def wrist_image_cb(self, msg):
         """
