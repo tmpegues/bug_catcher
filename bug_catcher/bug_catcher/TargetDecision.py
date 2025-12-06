@@ -315,6 +315,7 @@ class TargetDecision(Node):
         cam_tf (TransformStamped): The transform object from base to camera.
 
         """
+        # TODO: WE need to make sure this isn't messing up calibration.
         try:
             # Check if transform exists first to avoid spamming errors
             if not self.tf_buffer.can_transform(self.base_frame, camera_frame, rclpy.time.Time()):

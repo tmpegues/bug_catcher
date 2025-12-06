@@ -113,72 +113,6 @@ class CatcherNode(Node):
             BugInfo, '/wrist_camera/target_bug', self.bug_callback, 10, callback_group=cb_group
         )
 
-    def spawn_bug_in_rviz(self, pose):
-        """
-        Add the detected bug to the MoveIt Planning Scene.
-
-        Args:
-        ----
-        pose (geometry_msgs.msg.Pose): The pose of the bug in the planning frame.
-
-        """
-        # Define the shape (Box) based on parameters
-        prim = SolidPrimitive()
-        prim.type = SolidPrimitive.BOX
-        prim.dimensions = self.bug_dims
-
-        # Create the Obstacle object
-        bug_obstacle = Obstacle(self.target_bug_name, pose, prim)
-
-        self.mpi.ps.add_obstacle(bug_obstacle)
-        self.get_logger().info(f'Added {self.target_bug_name} to Planning Scene')
-
-    # async def bug_callback(self, msg):
-    #     """
-    #     Handle incoming target bug from the Wrist Camera.
-
-    #     Args:
-    #     ----
-    #     msg (bug_catcher_interfaces.msg.BugInfo): The target bug info.
-
-    #     """
-    #     # Prevent re-entry if the robot is already moving
-    #     if self.is_busy:
-    #         return
-
-    #     # Valid check for BugInfo (it's a single object, not a list)
-    #     if msg is None:
-    #         return
-
-    #     self.is_busy = True
-    #     self.get_logger().info('Wrist Camera lock acquired! executing catch...')
-
-    #     # 1. Extract Pose
-    #     target_pose = msg.pose.pose
-
-    #     # 2. Apply Z-Height Constraint
-    #     # Vision depth estimation can be noisy. We trust the physical measurement
-    #     # of the table height (parameter) more than the camera's Z estimation.
-    #     target_pose.position.z = self.grasp_z
-
-    #     self.get_logger().info(
-    #         f'Target Confirmed: x={target_pose.position.x:.2f}, '
-    #         f'y={target_pose.position.y:.2f}, z={target_pose.position.z:.2f}'
-    #     )
-
-    #     # 3. Spawn in RViz
-    #     self.spawn_bug_in_rviz(target_pose)
-
-    #     # 4. Execute Catch Sequence
-    #     await self.execute_catch_sequence()
-
-    #     # 5. Loop Control
-    #     if self.loop_execution:
-    #         self.is_busy = False
-    #         self.get_logger().info('Ready for next target...')
-    #     else:
-    #         self.get_logger().info('Task Complete. Idling.')
-
     async def execute_catch_sequence(self):
         """Execute the physical motion sequence to catch the bug."""
         bug = self.target_bug_name
@@ -263,7 +197,6 @@ class CatcherNode(Node):
             marker.type = Marker.CUBE
             marker.action = Marker.ADD
 
-
             if bug.target is True:
                 prim = SolidPrimitive()
                 prim.type = SolidPrimitive.BOX
@@ -273,7 +206,7 @@ class CatcherNode(Node):
                 current_target_bug = Obstacle('target_bug', bug.pose.pose, prim)
                 self.mpi.ps.add_obstacle(current_target_bug)
                 self.last_target_bug = current_target_bug
-                
+
                 # Make the target Marker larger and black:
                 marker.pose.position.x = bug.pose.pose.position.x
                 marker.pose.position.y = bug.pose.pose.position.y
@@ -342,6 +275,12 @@ class CatcherNode(Node):
                     marker.color.b = 0.5
                     marker.color.a = 1.0
                     marker.id = int('5' + str(i))
+                elif bug.color == 'yellow':
+                    marker.color.r = 1.0
+                    marker.color.g = 1.0
+                    marker.color.b = 0.0
+                    marker.color.a = 1.0
+                    marker.id = int('6' + str(i))
                 self.markers.append(marker)
         # Update Rviz markers for all colored bugs:
         self.marker_array.markers = self.markers
