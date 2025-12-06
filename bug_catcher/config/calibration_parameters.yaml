@@ -4,7 +4,7 @@
     default_color: red
     base_frame: base
     gripper_frame: fer_hand_tcp
-    color_frame: calibrated_colors.yaml
+    color_path: $(find-pkg-share bug_catcher)/config/calibration_parameters.yaml
     # Calibration parameters in meters (m)
     calibration:
       tags:

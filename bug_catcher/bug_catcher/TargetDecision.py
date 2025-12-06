@@ -109,7 +109,8 @@ class TargetDecision(Node):
         self.declare_parameter('default_color', 'red')
         self.declare_parameter('base_frame', 'base')
         self.declare_parameter('gripper_frame', 'fer_hand_tcp')
-        self.declare_parameter('color_file', 'calibrated_colors.yaml')
+        self.declare_parameter('color_path',
+                               '$(find-pkg-share bug_catcher)/config/calibration_parameters.yaml')
 
         # Declare tag calibration parameters:
         self.declare_parameter('calibration.tags.tag_1.x', -0.1143)
@@ -125,7 +126,7 @@ class TargetDecision(Node):
         self.target_color = self.get_parameter('default_color').get_parameter_value().value
         self.base_frame = self.get_parameter('base_frame').get_parameter_value().value
         self.gripper_frame = self.get_parameter('gripper_frame').get_parameter_value().value
-        self.color_file = self.get_parameter('color_frame').get_parameter_value().value
+        self.color_path = self.get_parameter('color_path').get_parameter_value().value
         self.tag_params = {
             1: (
                 self.get_parameter('calibration.tags.tag_2.x').get_parameter_value().double_value,
@@ -220,9 +221,9 @@ class TargetDecision(Node):
     # Helper Functions
     # -----------------------------------------------------------------
     def _load_calibrated_colors(self):
-        """Load calibrated colors from YAML file into Vision.py."""
+        """Load calibrated colors from YAML file."""
         try:
-            self.vision.load_calibration(self.color_file)
+            self.vision.load_calibration(self.color_path)
             if self.target_color not in self.vision.colors:
                 self.get_logger().warn(
                     f"Default color '{self.target_color}' not found in YAML! "
