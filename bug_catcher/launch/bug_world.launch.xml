@@ -30,6 +30,7 @@
     </include>
 
     <!--Static Transform Publisher from wrist to camera-->
+    <include file="$(find-pkg-share bug_catcher)/launch/load_wrist_tf.launch.py"/>
     <node pkg="tf2_ros" exec="static_transform_publisher" name="wrist_cam_tf"
           args="0.05 0.0 0.05 0 0 0 fer_hand_tcp wrist_camera_link" />
 
@@ -43,9 +44,11 @@
 
     <!--Load the Target Decision Node-->
     <node pkg="bug_catcher" exec="target_decision_node" name="target_decision_node" output="screen">
+        <param name="base_frame" value="base"/>
         <param name="default_color" value="pink"/>
         <param name="camera_height" value="0.5"/>
-        <param name="filename" value="$(find-pkg-share bug_catcher)/config/calibration_parameters.yaml"/>
+        <param name="filename" value="$(find-pkg-share bug_catcher)/config/calibration_parameters.yaml"/>        
+        <param name="color_path" value="$(find-pkg-share bug_catcher)/config/calibrated_colors.yaml"/>
     </node>
 
     <!--Load the Catcher Node-->
@@ -56,10 +59,6 @@
     <!--RQT Image Viewer-->
     <node pkg="rqt_image_view" exec="rqt_image_view" name="wrist_camera_debug_view" 
           args="/wrist_camera/debug_view"/>
-    <node pkg="rqt_image_view" exec="rqt_image_view" name="wrist_camera_mask_view" 
-          args="/wrist_camera/mask_view"/>
     <node pkg="rqt_image_view" exec="rqt_image_view" name="bug_god_debug_view" 
           args="/bug_god/debug_view"/>
-    <node pkg="rqt_image_view" exec="rqt_image_view" name="bug_god_mask_view" 
-          args="/bug_god/mask_view"/>
 </launch>

@@ -26,19 +26,22 @@ Parameters
 from bug_catcher.motionplanninginterface import MotionPlanningInterface
 from bug_catcher.planningscene import Obstacle
 
-from bug_catcher_interfaces.msg import BugInfo
+from bug_catcher_interfaces.msg import BugArray, BugInfo
+
+from moveit_msgs.msg import PlanningScene
+
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from tf2_ros.transform_listener import TransformListener
+from rclpy.qos import QoSDurabilityPolicy, QoSProfile
 
 from shape_msgs.msg import SolidPrimitive
+
 from tf2_ros.buffer import Buffer
-from bug_catcher_interfaces.msg import BugArray
+from tf2_ros.transform_listener import TransformListener
+
 from visualization_msgs.msg import Marker, MarkerArray
-from moveit_msgs.msg import PlanningScene
-from rclpy.qos import QoSDurabilityPolicy, QoSProfile
 
 
 class CatcherNode(Node):

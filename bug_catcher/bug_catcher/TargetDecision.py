@@ -109,9 +109,7 @@ class TargetDecision(Node):
         self.declare_parameter('default_color', 'pink')
         self.declare_parameter('base_frame', 'base')
         self.declare_parameter('gripper_frame', 'fer_hand_tcp')
-        self.declare_parameter(
-            'color_path', '$(find-pkg-share bug_catcher)/config/calibration_parameters.yaml'
-        )
+        self.declare_parameter('color_path', '')
 
         # Declare tag calibration parameters:
         self.declare_parameter('calibration.tags.tag_1.x', -0.1143)
@@ -223,10 +221,16 @@ class TargetDecision(Node):
     # -----------------------------------------------------------------
     def _load_calibrated_colors(self):
         """Load calibrated colors from YAML file."""
-        pkg_share = get_package_share_directory('bug_catcher')
-        color_path = os.path.join(pkg_share, 'config', self.color_file)
+        if not self.color_path:
+            pkg_share = get_package_share_directory('bug_catcher')
+            self.color_path = os.path.join(pkg_share, 'config', 'calibrated_colors.yaml')
+            self.get_logger().info(
+                f'No color_path param provided. Using default: {self.color_path}'
+            )
+
         try:
-            self.vision.load_calibration(color_path)
+            self.get_logger().info(f'Loading calibration from: {self.color_path}')
+            self.vision.load_calibration(self.color_path)
             if self.target_color not in self.vision.colors:
                 self.get_logger().warn(
                     f"Default color '{self.target_color}' not found in YAML! "
