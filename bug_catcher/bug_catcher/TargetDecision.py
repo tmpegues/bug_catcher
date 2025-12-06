@@ -105,13 +105,11 @@ class TargetDecision(Node):
         # ==================================
         # 1. Parameters & Setup
         # ==================================
-        # TODO: Need to be added into a config file. They currently are only using default values.
+        # Declare the config parameters:
         self.declare_parameter('default_color', 'red')
-        self.target_color = self.get_parameter('default_color').value
         self.declare_parameter('base_frame', 'base')
-        self.base_frame = self.get_parameter('base_frame').value
         self.declare_parameter('gripper_frame', 'fer_hand_tcp')
-        self.gripper_frame = self.get_parameter('gripper_frame').value
+        self.declare_parameter('color_file', 'calibrated_colors.yaml')
 
         # Declare tag calibration parameters:
         self.declare_parameter('calibration.tags.tag_1.x', -0.1143)
@@ -122,7 +120,12 @@ class TargetDecision(Node):
         self.declare_parameter('calibration.tags.tag_3.y', 0.4064)
         self.declare_parameter('calibration.tags.tag_4.x', 0.6858)
         self.declare_parameter('calibration.tags.tag_4.y', -0.4572)
-        # Set the tag parameter values:
+
+        # Set the tag and config parameter values:
+        self.target_color = self.get_parameter('default_color').get_parameter_value().value
+        self.base_frame = self.get_parameter('base_frame').get_parameter_value().value
+        self.gripper_frame = self.get_parameter('gripper_frame').get_parameter_value().value
+        self.color_file = self.get_parameter('color_frame').get_parameter_value().value
         self.tag_params = {
             1: (
                 self.get_parameter('calibration.tags.tag_2.x').get_parameter_value().double_value,
@@ -177,7 +180,7 @@ class TargetDecision(Node):
         )
 
         # ==================================
-        # 5. Initial System Integration:
+        # 5. Initial System Integration Setup:
         # ==================================
         # Timer:
         self.timer_update = self.create_timer(0.05, self.calibrate_target_publisher)
@@ -200,16 +203,16 @@ class TargetDecision(Node):
             # Store in dictionary for easy lookup:
             self.base_tag[marker_id] = mat
 
+        # Translate Y-coordinate to match ROS REP-103 frame as OpenCV has a flipped y orientation.
+        # X_ros =  Y_cv, Y_ros = -X_cv, Z_ros = Z_cv
+        self.Tcv_to_ros = np.array([[0, 1, 0, 0], [-1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
+
         # Establish Calibration Averaging Variables:
         self.num_april_tags = 4
         self.calibration_done = False
         self.calibration_frames = []
-        self.max_calibration_frames = 360  # Average over 300 frames (10 seconds)
+        self.max_calibration_frames = 300  # Average over 300 frames (10 seconds)
         self.state = State.INITIALIZING
-
-        # Translate Y-coordinate to match ROS REP-103 frame as OpenCV has a flipped y orientation.
-        # X_ros =  Y_cv, Y_ros = -X_cv, Z_ros = Z_cv
-        self.Tcv_to_ros = np.array([[0, 1, 0, 0], [-1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
 
         self.get_logger().info(f'Node started. Current Target: [{self.target_color}]')
 
@@ -217,16 +220,9 @@ class TargetDecision(Node):
     # Helper Functions
     # -----------------------------------------------------------------
     def _load_calibrated_colors(self):
-        """Load calibrated colors from YAML file."""
-        pkg_share = get_package_share_directory('bug_catcher')
-        yaml_path = os.path.join(pkg_share, 'config', 'calibrated_colors.yaml')
-
-        if not os.path.exists(yaml_path):
-            self.get_logger().warn(f'Config not found at {yaml_path}, using local file.')
-            yaml_path = 'calibrated_colors.yaml'
-
+        """Load calibrated colors from YAML file into Vision.py."""
         try:
-            self.vision.load_calibration(yaml_path)
+            self.vision.load_calibration(self.color_file)
             if self.target_color not in self.vision.colors:
                 self.get_logger().warn(
                     f"Default color '{self.target_color}' not found in YAML! "
@@ -315,7 +311,6 @@ class TargetDecision(Node):
         cam_tf (TransformStamped): The transform object from base to camera.
 
         """
-        # TODO: WE need to make sure this isn't messing up calibration.
         try:
             # Check if transform exists first to avoid spamming errors
             if not self.tf_buffer.can_transform(self.base_frame, camera_frame, rclpy.time.Time()):
@@ -484,8 +479,6 @@ class TargetDecision(Node):
         base_camera_tf = {}  # Initialize a dictionary to hold transforms from base to camera.
         optical_tag_tf = {}  # Initialize the transfrom of camera to tag
         tag_optical_tf = {}  # Initialize the transform of the tag to camera.
-
-        # Retrieve the Camera_Link to Camera_Optical Tf:
 
         for i in range(1, num_tags + 1):
             # Listen and store the tf of base_marker seen by camera:
@@ -885,7 +878,7 @@ class TargetDecision(Node):
         cam_height, transform_stamped = self.get_cam_height_and_transform(cam_frame_id)
 
         if cam_height is None:
-            cam_height = 0.15  # Fallback height if TF is not ready
+            return        # Don't process information if the camera height isn't calibrated.
 
         # 1. Detect ONLY the target color
         detections, _, mask = self.vision.detect_objects(frame, self.target_color)

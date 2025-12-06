@@ -1,6 +1,11 @@
 /**:
   ros__parameters:
-  # Calibration parameters in meters (m)
+    # Target Detection Parameters:
+    default_color: red
+    base_frame: base
+    gripper_frame: fer_hand_tcp
+    color_frame: calibrated_colors.yaml
+    # Calibration parameters in meters (m)
     calibration:
       tags:
         tag_1:
