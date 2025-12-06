@@ -1,0 +1,20 @@
+parameters:
+  name: franka_calib
+  calibration_type: eye_in_hand
+  robot_base_frame: base
+  robot_effector_frame: fer_hand_tcp
+  tracking_base_frame: camera_link
+  tracking_marker_frame: fer_hand_tcp
+  freehand_robot_movement: true
+  move_group_namespace: /
+  move_group: manipulator
+transform:
+  translation:
+    x: 0.5551171625677198
+    y: 0.21893592719353844
+    z: 0.0643174706627748
+  rotation:
+    x: 0.01899543724487582
+    y: -0.006241011546353925
+    z: -0.30056763282051885
+    w: 0.9535509012315095
