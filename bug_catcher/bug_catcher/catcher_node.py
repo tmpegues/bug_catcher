@@ -174,7 +174,7 @@ class CatcherNode(Node):
             - pose : geometry_msgs/PoseStamped (or similar)
                 The estimated pose of the bug in the camera/base frame.
             - color : str
-                The bug's color label (e.g., 'red', 'blue', ...).
+                The bug's color label (e.g., 'pink', 'blue', ...).
 
         """
         # Remove the last target bug if it exists:
@@ -245,10 +245,10 @@ class CatcherNode(Node):
                 self.markers.append(marker)
 
                 # Assign a specific id to each marker based on color identity and color:
-                if bug.color == 'red':
+                if bug.color == 'pink':
                     marker.color.r = 1.0
-                    marker.color.g = 0.0
-                    marker.color.b = 0.0
+                    marker.color.g = 0.75
+                    marker.color.b = 0.8
                     marker.color.a = 1.0
                     marker.id = int('1' + str(i))  # Sets a unique number based on color
                 elif bug.color == 'green':

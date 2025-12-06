@@ -25,7 +25,7 @@ Subscribers
 
 Parameters
 ----------
-+ default_color (string, default='red'): The initial color to detect upon startup.
++ default_color (string, default='pink'): The initial color to detect upon startup.
 + base_frame (string, default='base'): The robot's root frame ID.
 + gripper_frame (string, default='fer_hand_tcp'): The end-effector frame ID.
 calibration.tags.tag_<i>.x : float
@@ -106,10 +106,12 @@ class TargetDecision(Node):
         # 1. Parameters & Setup
         # ==================================
         # Declare the config parameters:
-        self.declare_parameter('default_color', 'blue')
+        self.declare_parameter('default_color', 'pink')
         self.declare_parameter('base_frame', 'base')
         self.declare_parameter('gripper_frame', 'fer_hand_tcp')
-        self.declare_parameter('color_file', 'calibrated_colors.yaml')
+        self.declare_parameter(
+            'color_path', '$(find-pkg-share bug_catcher)/config/calibration_parameters.yaml'
+        )
 
         # Declare tag calibration parameters:
         self.declare_parameter('calibration.tags.tag_1.x', -0.1143)
@@ -125,7 +127,7 @@ class TargetDecision(Node):
         self.target_color = self.get_parameter('default_color').value
         self.base_frame = self.get_parameter('base_frame').value
         self.gripper_frame = self.get_parameter('gripper_frame').value
-        self.color_file = self.get_parameter('color_file').value
+        self.color_path = self.get_parameter('color_path').value
         self.tag_params = {
             1: (
                 self.get_parameter('calibration.tags.tag_2.x').get_parameter_value().double_value,
@@ -876,7 +878,7 @@ class TargetDecision(Node):
         cam_height, transform_stamped = self.get_cam_height_and_transform(cam_frame_id)
 
         if cam_height is None:
-            return        # Don't process information if the camera height isn't calibrated.
+            return  # Don't process information if the camera height isn't calibrated.
 
         # 1. Detect ONLY the target color
         detections, _, mask = self.vision.detect_objects(frame, self.target_color)

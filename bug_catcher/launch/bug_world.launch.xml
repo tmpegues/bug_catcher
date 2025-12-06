@@ -10,7 +10,8 @@
     <!--Launch the Realsense Camera Node (bug_god)-->
     <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py">
         <arg name="camera_name" value="bug_god"/>
-
+        <arg name="camera_namespace" value="camera"/>
+        <arg name="serial_no" value="'139522074035'"/>
         <arg name="pointcloud.enable" value="true"/>
         <arg name="color_width" value="640"/>
         <arg name="color_height" value="480"/>
@@ -18,18 +19,19 @@
     </include>
 
     <!--Launch the Realsense Camera Node (wrist_camera)-->
-    <!-- <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py">
+    <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py">
         <arg name="camera_name" value="wrist_camera"/>
-        <arg name="serial_no" value="242322077613"/>
+        <arg name="camera_namespace" value="camera"/>
+        <arg name="serial_no" value="'242322077613'"/>
         <arg name="pointcloud.enable" value="true"/>
         <arg name="color_width" value="640"/>
         <arg name="color_height" value="480"/>
         <arg name="color_fps" value="30"/>
-    </include> -->
+    </include>
 
     <!--Static Transform Publisher from wrist to camera-->
-    <!-- <node pkg="tf2_ros" exec="static_transform_publisher" name="wrist_cam_broadcaster"
-          args="0.4 0.0 0.5 3.14159 0 -1.57079 base wrist_camera_color_optical_frame" /> -->
+    <node pkg="tf2_ros" exec="static_transform_publisher" name="wrist_cam_tf"
+          args="0.05 0.0 0.05 0 0 0 fer_hand_tcp wrist_camera_link" />
 
     <!--Launch the April tag identification Node-->
     <node pkg="apriltag_ros" exec="apriltag_node" name="apriltag">
@@ -41,7 +43,7 @@
 
     <!--Load the Target Decision Node-->
     <node pkg="bug_catcher" exec="target_decision_node" name="target_decision_node" output="screen">
-        <param name="default_color" value="red"/>
+        <param name="default_color" value="pink"/>
         <param name="camera_height" value="0.5"/>
         <param name="filename" value="$(find-pkg-share bug_catcher)/config/calibration_parameters.yaml"/>
     </node>
@@ -52,8 +54,12 @@
     </node>
 
     <!--RQT Image Viewer-->
-    <node pkg="rqt_image_view" exec="rqt_image_view" name="target_image_viewer" 
-          args="/target_image"/>
-    <node pkg="rqt_image_view" exec="rqt_image_view" name="mask_image_viewer" 
-          args="/mask_image"/>
+    <node pkg="rqt_image_view" exec="rqt_image_view" name="wrist_camera_debug_view" 
+          args="/wrist_camera/debug_view"/>
+    <node pkg="rqt_image_view" exec="rqt_image_view" name="wrist_camera_mask_view" 
+          args="/wrist_camera/mask_view"/>
+    <node pkg="rqt_image_view" exec="rqt_image_view" name="bug_god_debug_view" 
+          args="/bug_god/debug_view"/>
+    <node pkg="rqt_image_view" exec="rqt_image_view" name="bug_god_mask_view" 
+          args="/bug_god/mask_view"/>
 </launch>
