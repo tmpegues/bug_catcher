@@ -695,7 +695,7 @@ class TargetDecision(Node):
 
         try:
             frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-            # # TODO: Crop to remove borders
+            # TODO: Mask image to crop out unwanted filtering regions.
             # frame = frame[50:650, 350:975]
         except CvBridgeError as e:
             self.get_logger().error(f'CV Bridge Error: {e}')

@@ -260,6 +260,9 @@ class CatcherNode(Node):
             marker.header.frame_id = 'base'
             marker.header.stamp = bug.pose.header.stamp  # The bug gets a time stamp.
             marker.ns = 'bug_markers'
+            marker.type = Marker.CUBE
+            marker.action = Marker.ADD
+
 
             if bug.target is True:
                 prim = SolidPrimitive()
@@ -270,9 +273,8 @@ class CatcherNode(Node):
                 current_target_bug = Obstacle('target_bug', bug.pose.pose, prim)
                 self.mpi.ps.add_obstacle(current_target_bug)
                 self.last_target_bug = current_target_bug
-
-                marker.type = Marker.TEXT_VIEW_FACING
-                marker.action = Marker.ADD
+                
+                # Make the target Marker larger and black:
                 marker.pose.position.x = bug.pose.pose.position.x
                 marker.pose.position.y = bug.pose.pose.position.y
                 marker.pose.position.z = bug.pose.pose.position.z
@@ -280,20 +282,19 @@ class CatcherNode(Node):
                 marker.pose.orientation.y = 0.0
                 marker.pose.orientation.z = 0.0
                 marker.pose.orientation.w = 1.0
-                marker.scale.z = 1.0  # Only scale z is used for text
-                marker.color.r = 1.0
+                marker.scale.x = 0.05
+                marker.scale.y = 0.05
+                marker.scale.z = 0.05
+                marker.color.r = 0.0
                 marker.color.g = 0.0
                 marker.color.b = 0.0
                 marker.color.a = 1.0
-                marker.text = 'Target'
                 marker.lifetime.sec = 0
                 marker.lifetime.nanosec = 20000000
+                self.markers.append(marker)
 
             else:
                 # The bug is not a current target, just track it as a colored marker and publish.
-                marker.type = Marker.CUBE
-                marker.action = Marker.ADD
-
                 # Set the location of the bug:
                 marker.pose.position.x = bug.pose.pose.position.x
                 marker.pose.position.y = bug.pose.pose.position.y
