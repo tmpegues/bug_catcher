@@ -28,8 +28,7 @@ class TurtleSimAdjuster(Node):
         self.bug_pub = self.create_publisher(BugInfo, 'bug_info', 10)
         self.ee_pub = self.create_publisher(Pose, 'ee_pose', 10)
 
-        # All publishing should be done at 50 Hz
-        self.timer = self.create_timer(1 / 30, self.timer_callback)
+        self.timer = self.create_timer(1 / 1, self.timer_callback)
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)

@@ -62,7 +62,8 @@ class PickNode(Node):
         bug_msg (BugInfo): The BugInfo message corresponding to the target bug._
 
         """
-        if (self.get_clock().now() - self.last_traj_time) > Duration(seconds=0.05):
+        await self.mpi.OpenGripper()
+        if (self.get_clock().now() - self.last_traj_time) > Duration(seconds=0.3):
             self.get_logger().debug(
                 f'{bug_msg.pose.pose.position} TMP (pick_node): info cb in pick_node triggered: '
             )

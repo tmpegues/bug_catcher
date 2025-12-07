@@ -31,6 +31,7 @@ class BugMover:
 
         self.ee_cup_x_offset = +0.1
         self.ee_cup_z_offset = +0.13
+        self.ee_cup_tot_offset = (0.1**2 + 0.13**2) ** 0.5
 
         self.node.get_logger().debug('BugCatcher initialization complete')
 
@@ -51,7 +52,7 @@ class BugMover:
         success (bool): True if  gripper successfully closed (False might mean we're still moving)
 
         """
-        user_speed = 1.0
+        user_speed = 0.0
 
         ee_frame = 'fer_hand_tcp'
         self.node.get_logger().debug(f'{buginfo_msg.pose.pose.position} TMP (bm) bug pose: ')
@@ -63,21 +64,20 @@ class BugMover:
             self.node.mpi.rs.get_ee_pose(frame=ee_frame)[1],  # TMP TODO: update frame
         )
         success = False
-        self.node.get_logger().info(f'Stalking: {dist_to_bug}')
+        self.node.get_logger().info(f'Stalking: {dist_to_bug - self.ee_cup_tot_offset}')
 
         goal_pose = Pose(orientation=buginfo_msg.pose.pose.orientation)
         goal_pose.position.x = buginfo_msg.pose.pose.position.x + self.ee_cup_x_offset
         goal_pose.position.y = buginfo_msg.pose.pose.position.y
         goal_pose.position.z = buginfo_msg.pose.pose.position.z + self.ee_cup_z_offset
         # While far from the bug, keep moving and do not close the gripper
-        if dist_to_bug > 0.10:  # Raise the goal pose if far from the bug
+        if dist_to_bug > 0.10 + self.ee_cup_tot_offset:  # Raise the goal pose if far from the bug
             self.node.get_logger().info('Stalking: Big')
 
             goal_pose.position.z += 0.05
-        elif dist_to_bug > 0.01:  # If close, lower the gripper
+        elif dist_to_bug > 0.01 + self.ee_cup_tot_offset:  # If close, lower the gripper
             self.node.get_logger().info('Stalking: Mid')
-            goal_pose.position = buginfo_msg.pose.pose.position
-        elif dist_to_bug < 0.01:  # If really close, close the gripper
+        elif dist_to_bug < 0.01 + self.ee_cup_tot_offset:  # If really close, close the gripper
             self.node.get_logger().info('Stalking: Small')
             return await self.node.mpi.GripBug()
 
@@ -88,13 +88,14 @@ class BugMover:
             start_pose = self.node.mpi.rs.get_ee_pose(frame=ee_frame)[1]
             start_traj_point = None
         else:
-            start_pose = self.last_waypoints[-2]
+            # start_pose = self.last_waypoints[-1]
+            start_pose = self.node.mpi.rs.get_ee_pose(frame=ee_frame)[1]
 
         if type(self.last_traj) is not bool:
-            start_traj_point = self.last_traj.points[-1]
-            # start_traj_point = None
-            # Start current trajectory from 2nd last waypoint
-            # that's being executed
+            # start_traj_point = self.last_traj.points[-1]
+            start_traj_point = None
+        # Start current trajectory from 2nd last waypoint
+        # that's being executed
         else:
             start_traj_point = None
 
