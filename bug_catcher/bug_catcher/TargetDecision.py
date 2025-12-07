@@ -125,16 +125,16 @@ class TargetDecision(Node):
         self.declare_parameter('calibration.tags.tag_4.y', -0.4572)
         # Set the color switch location (w.r.t base):
         self.declare_parameter('color_switch.x', 0.76835)
-        self.declare_parameter('color_switch.x', 0.00000)
-        self.declare_parameter('color_switch.x', 0.1524)
+        self.declare_parameter('color_switch.y', 0.00000)
+        self.declare_parameter('color_switch.z', 0.1524)
 
         # Set the tag and config parameter values:
         self.target_color = self.get_parameter('default_color').value
         self.base_frame = self.get_parameter('base_frame').value
         self.gripper_frame = self.get_parameter('gripper_frame').value
         self.color_path = self.get_parameter('color_path').value
-        self.pad_start = self.get_parameter('pad_start').value
-        self.pad_end = self.get_parameter('pad_end').value
+        self.pad_start = self.get_parameter('pad_start').get_parameter_value()._integer_value
+        self.pad_end = self.get_parameter('pad_end').get_parameter_value()._integer_value
         self.tag_params = {
             1: (
                 self.get_parameter('calibration.tags.tag_2.x').get_parameter_value().double_value,
@@ -589,7 +589,7 @@ class TargetDecision(Node):
                     # Transform the Camera_Link to Ros:
                     optical_link = self.Tcv_to_ros @ optical_link
                     self.optical_link = optical_link
-                    self.state = State.CALIBRATING
+                    self.state = State.CALIBRATING_SKYCAM
                     self.get_logger().info('Camera tf available')
                 except (
                     tf2_ros.LookupException,
@@ -730,13 +730,14 @@ class TargetDecision(Node):
                 # Loop through Tags 5-10 and set the location of the drop pads:
                 # Establish the locations for the drop off pads:
                 self.drop_locs = {}
-                for i in range(self.pad_start, self.pad_end):
+                for i in range(self.pad_start, self.pad_end + 1):
                     # Listen and store the tf of base_marker seen by camera:
                     try:
                         tf_msg = self.tf_buffer.lookup_transform(
                             'base',
                             f'tag_{i}',
                             rclpy.time.Time(),
+                            timeout=rclpy.duration.Duration(seconds=1.0),
                         )
                         # Convert the transform message to a matrix and store.
                         pose = Pose()
@@ -744,19 +745,19 @@ class TargetDecision(Node):
                         pose.position.y = float(tf_msg.transform.translation.y)
                         pose.position.z = float(tf_msg.transform.translation.z)
                         pose.orientation.w = 1.0
+                        self.get_logger().info(f' pose is {pose}')
                         # Set the color string of the id:
-                        # These id to color mappings are consistant across the package:
-                        if i == 1:
+                        if i == self.pad_start:
                             self.drop_locs['pink'] = pose
-                        elif i == 2:
+                        elif i == self.pad_start + 1:
                             self.drop_locs['green'] = pose
-                        elif i == 3:
+                        elif i == self.pad_start + 2:
                             self.drop_locs['blue'] = pose
-                        elif i == 4:
+                        elif i == self.pad_start + 3:
                             self.drop_locs['orange'] = pose
-                        elif i == 5:
+                        elif i == self.pad_start + 4:
                             self.drop_locs['purple'] = pose
-                        elif i == 6:
+                        elif i == self.pad_start + 5:
                             self.drop_locs['yellow'] = pose
                     except (
                         tf2_ros.LookupException,
@@ -770,7 +771,7 @@ class TargetDecision(Node):
                     pair = BasePose()
                     pair.color = color
                     pair.pose = pose
-                    base_poses.entries.append(pair)
+                    base_poses.base_poses.append(pair)
                 self.drop_pub.publish(base_poses)
                 # Switch to the Publication state:
                 self.state = State.PUBLISHING
@@ -934,6 +935,7 @@ class TargetDecision(Node):
 
                 # Create a mask of the image at the color_switch point to change the color when
                 # the block has been changed. (Pre_existing mask exists on image)
+                frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
                 switch_mask = np.zeros(frame.shape[:2], dtype='uint8')
                 x = self.color_switch_param[0]
                 y = self.color_switch_param[1]
@@ -962,7 +964,7 @@ class TargetDecision(Node):
                     )
                     # If a color is detected publish that color to the topic:
                     if detections is not None:
-                        self.target_switch_pub.publish(color_name)
+                        self.target_switch_pub.publish(String(data=color_name))
                 self.switch_debug_pub.publish(
                     self.bridge.cv2_to_imgmsg(switch_debug_frame, encoding='bgr8')
                 )

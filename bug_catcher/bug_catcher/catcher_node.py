@@ -358,7 +358,7 @@ class CatcherNode(Node):
 
         """
         # Break apart the message and store the color and pose in a dictionary:
-        for drop_pose in drop_msg.entries:
+        for drop_pose in drop_msg.base_poses:
             self.drop_locs[drop_pose.color] = drop_pose.pose
 
 
