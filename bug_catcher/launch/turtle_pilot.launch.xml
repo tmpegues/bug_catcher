@@ -11,8 +11,8 @@
     </node>
     <node pkg="bug_catcher" exec="turtle_sim_adjuster"/>
     <!-- <node pkg="turtlesim" exec="turtlesim_node">
-        <param name="holonomic" value="True"/>
-    </node> -->
+        <param name="holonomic" value="True"/> -->
+    <!-- </node> -->
 
 
 </launch>

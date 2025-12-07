@@ -98,7 +98,7 @@ def waypoint_maker(start_pose: Pose, end_pose: Pose, steps: int = 5):
         new_pose.position.x = start_pose.position.x + (step) * x_step
         new_pose.position.y = start_pose.position.y + (step) * y_step
         new_pose.position.z = end_pose.position.z
-        print(end_pose.position.z)
+        # print(end_pose.position.z)
         waypoints.append(new_pose)
 
     return waypoints

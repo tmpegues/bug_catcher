@@ -24,6 +24,7 @@ Parameters
 
 """
 
+import asyncio
 from enum import Enum, auto
 
 from bug_catcher.bugmover import BugMover
@@ -41,19 +42,22 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile
+from rclpy.time import Duration
 
 from shape_msgs.msg import SolidPrimitive
 
 from visualization_msgs.msg import Marker, MarkerArray
 
 
+OFFSET_X = -0.10
+OFFSET_Z = -0.13
+
+
 class State(Enum):
     """Defines the FSM states for the Catcher Node."""
 
     IDLE = auto()  # Waiting for a target
-    APPROACHING = auto()  # Moving to coarse location (Pre-grasp)
-    SERVOING = auto()  # Fine-tuning alignment using visual servoing
-    GRASPING = auto()  # Descending and closing gripper
+    STALKING = auto()  # Stalking and catching the target
     DROPPING = auto()  # Moving to sorting bin and opening gripper
     VERIFYING = auto()  # Checking Sky Cam to confirm success
 
@@ -65,7 +69,7 @@ class CatcherNode(Node):
         """Initialize the Catcher, connecting to interfaces."""
         super().__init__('catcher_node')
 
-        # 1. Initialize Motion Planner
+        # 1. Initialize Motion Planners
         self.mpi = MotionPlanningInterface(self)
         self.bm = BugMover(self)
 
@@ -73,7 +77,7 @@ class CatcherNode(Node):
         self.declare_parameter('bug_dimensions', [0.045, 0.015, 0.015])
         self.bug_dims = self.get_parameter('bug_dimensions').value
 
-        self.declare_parameter('grasp_height_z', 0.02)
+        self.declare_parameter('grasp_height_z', 0.05 - OFFSET_Z)
         self.grasp_z = self.get_parameter('grasp_height_z').value
 
         self.declare_parameter('loop_execution', True)
@@ -90,13 +94,13 @@ class CatcherNode(Node):
         # 3. Drop-off Configuration (Color -> [x, y, z])
         # TODO: Adjust these coordinates based on ACTUAL SETUP
         self.drop_locations = {
-            'red': [0.3, 0.4, 0.2],
-            'blue': [0.3, -0.4, 0.2],
-            'green': [0.4, 0.4, 0.2],
-            'pink': [0.4, -0.4, 0.2],
-            'orange': [0.5, 0.0, 0.2],
-            'purple': [0.6, 0.0, 0.2],
-            'default': [0.3, 0.0, 0.2],  # Fallback
+            'red': [0.3, 0.4, 0.3],
+            'blue': [0.3, -0.4, 0.3],
+            'green': [0.4, 0.4, 0.3],
+            'pink': [0.4, -0.4, 0.3],
+            'orange': [0.5, 0.0, 0.3],
+            'purple': [0.6, 0.0, 0.3],
+            'default': [0.3, 0.0, 0.3],  # Fallback
         }
 
         # Subscription for the bug tracking info:
@@ -130,7 +134,8 @@ class CatcherNode(Node):
         self.inventory_counts = {}  # Stores current count of bugs by color
         self.count_before_catch = 0  # Snapshot for verification
         self.action_pending = False  # Lock to prevent overlapping async calls
-        self.last_target_collision_obj = None
+
+        self.last_traj_time = self.get_clock().now()
 
         # 5. Subscribers & Publishers
         cb_group = MutuallyExclusiveCallbackGroup()
@@ -156,230 +161,20 @@ class CatcherNode(Node):
         )
         self.scene_pub = self.create_publisher(PlanningScene, '/planning_scene', 10)
 
+        # Load new gripper TCP frame
+        self.new_TCP()
+
         # 6. Main Control Loop Timer (10 Hz)
         self.timer = self.create_timer(0.1, self.control_loop)
 
         self.get_logger().info('Catcher Node Initialized. State: IDLE')
 
     # =========================================================================
-    # Callbacks (Input Handling)
+    # Helper Functions
     # =========================================================================
-
-    def wrist_target_callback(self, msg):
-        """
-        Receives high-priority target data from Wrist Cam.
-
-        Only updates the target if IDLE or currently APPROACHING.
-        """
-        if msg is None:
-            return
-
-        if self.state == State.IDLE:
-            self.get_logger().info(f'Target Found ({msg.color}). Starting Catch Sequence.')
-            self.current_target_info = msg
-            self.state = State.APPROACHING
-
-        elif self.state == State.APPROACHING:
-            # Allow updating target position on-the-fly for better accuracy
-            # while moving to the coarse approach point
-            self.current_target_info = msg
-
-    def sky_observer_callback(self, msg):
-        """Maintains global awareness: updates inventory counts and RViz markers."""
-        # 1. Update Inventory Counts
-        temp_counts = {}
-        for bug in msg.bugs:
-            c = bug.color
-            temp_counts[c] = temp_counts.get(c, 0) + 1
-        self.inventory_counts = temp_counts
-
-        # 2. Visualize Scene in RViz
-        self._publish_markers(msg)
-
-    # =========================================================================
-    # Main Control Loop (State Machine)
-    # =========================================================================
-
-    async def control_loop(self):
-        """Check the current state and execute the corresponding logic."""
-        # If an async action (like robot movement) is currently running, do not re-enter.
-        if self.action_pending:
-            return
-
-        try:
-            self.action_pending = True  # Lock
-
-            if self.state == State.IDLE:
-                # Do nothing, waiting for wrist callback
-                pass
-
-            elif self.state == State.APPROACHING:
-                await self._handle_approaching()
-
-            elif self.state == State.SERVOING:
-                await self._handle_servoing()
-
-            elif self.state == State.GRASPING:
-                await self._handle_grasping()
-
-            elif self.state == State.DROPPING:
-                await self._handle_dropping()
-
-            elif self.state == State.VERIFYING:
-                await self._handle_verifying()
-
-        except RuntimeError as e:
-            self.get_logger().error(f'Error in control loop: {e}')
-            self.state = State.IDLE  # Reset on error
-        finally:
-            self.action_pending = False  # Unlock
-
-    # =========================================================================
-    # State Handlers (The Logic)
-    # =========================================================================
-
-    async def _handle_approaching(self):
-        """State: Move above the object (Coarse alignment)."""
-        target = self.current_target_info
-
-        # 1. Add Collision Object to MoveIt
-        pose_safe = target.pose.pose
-        pose_safe.position.z = self.grasp_z  # Flatten to table height
-
-        prim = SolidPrimitive()
-        prim.type = SolidPrimitive.BOX
-        prim.dimensions = self.bug_dims
-
-        obs = Obstacle(self.target_bug_name, pose_safe, prim)
-        self.mpi.ps.add_obstacle(obs)
-        self.last_target_collision_obj = obs
-
-        # 2. Move Above
-        self.get_logger().info(f'Approaching {target.color} bug...')
-
-        # Ensure RobotState is ready
-        if not self._check_robot_connection():
-            return
-
-        success = await self.bm.stalking_pick(self.current_target_info)
-
-        if success:
-            self.state = State.SERVOING
-        else:
-            self.get_logger().warn('Approach failed. Retrying or Resetting.')
-            self.state = State.IDLE
-
-    async def _handle_servoing(self):
-        """State: Use Visual Servoing for fine alignment."""
-        self.get_logger().info('Visual Servoing...')
-
-        # TODO: Miguel's function here
-        success = await self.bm.stalking_pick(self.current_target_info)
-
-        # Placeholder for now:
-        await rclpy.sleep(0.5)
-        success = True
-
-        if success:
-            self.state = State.GRASPING
-        else:
-            self.get_logger().warn('Visual Servo failed. Aborting.')
-            self.state = State.IDLE
-
-    async def _handle_grasping(self):
-        """State: Descend, Pick, and Lift."""
-        self.get_logger().info('Grasping...')
-
-        # Record inventory BEFORE we pick it up
-        color = self.current_target_info.color
-        self.count_before_catch = self.inventory_counts.get(color, 0)
-
-        # Execute Pick Sequence
-        bug_name = self.target_bug_name
-
-        await self.bm.stalking_pick(bug_name)
-        success = await self.mpi.LiftOffTable()
-
-        if success:
-            self.state = State.DROPPING
-        else:
-            self.get_logger().error('Grasp sequence failed during lift.')
-            self.state = State.IDLE
-
-    async def _handle_dropping(self):
-        """State: Move to bin and release."""
-        color = self.current_target_info.color
-        self.get_logger().info(f'Dropping off {color} bug...')
-
-        # Get coords
-        drop_coords = self.drop_locations.get(color, self.drop_locations['default'])
-
-        # Create Pose
-        drop_pose = Pose()
-        drop_pose.position.x = drop_coords[0]
-        drop_pose.position.y = drop_coords[1]
-        drop_pose.position.z = drop_coords[2]
-        # Keep gripper pointing down (approximate quaternion)
-        drop_pose.orientation.x = 1.0
-        drop_pose.orientation.y = 0.0
-        drop_pose.orientation.z = 0.0
-        drop_pose.orientation.w = 0.0
-
-        # Move and Drop
-        await self.mpi.MoveDownToObject(drop_pose)
-        await self.mpi.OpenGripper()
-
-        # Detach object from gripper in MoveIt
-        self.mpi.ps.remove_obstacle(self.last_target_collision_obj)
-
-        self.state = State.VERIFYING
-
-    async def _handle_verifying(self):
-        """State: Return to Ready and check if bug count decreased."""
-        self.get_logger().info('Verifying catch...')
-
-        # Move to Ready to clear view for Sky Cam
-        await self.mpi.GetReady()
-
-        # Wait a moment for Sky Cam to update
-        await rclpy.sleep(1.0)
-
-        color = self.current_target_info.color
-        current_count = self.inventory_counts.get(color, 0)
-
-        if current_count < self.count_before_catch:
-            self.get_logger().info('>>> SUCCESS: Bug count decreased. Catch Confirmed.')
-        else:
-            warn_msg = (
-                f'> WARNING: Bug count did not decrease '
-                f'({self.count_before_catch} -> {current_count}). '
-                'Catch may have failed.'
-            )
-            self.get_logger().warn(warn_msg)
-
-        # Final Logic
-        self.current_target_info = None
-        if self.loop_execution:
-            self.state = State.IDLE
-            self.get_logger().info('Resetting to IDLE for next target.')
-        else:
-            self.get_logger().info('Loop execution disabled. Stopping.')
-            # Stay in VERIFYING or switch to a DONE state to prevent looping
-
-    # =========================================================================
-    # Helpers
-    # =========================================================================
-
-    def _check_robot_connection(self):
-        """Ensure we have robot state before planning."""
-        current_joints = self.mpi.rs.get_angles()
-        if current_joints is not None and len(current_joints.name) > 0:
-            return True
-        self.get_logger().warn('Waiting for Robot State...')
-        return False
 
     def _publish_markers(self, bug_msg):
-        """Visualizes bugs in RViz. Copied from calibration logic."""
+        """Visualizes bugs in RViz. Adapted from calibration node."""
         marker_array = MarkerArray()
 
         for i, bug in enumerate(bug_msg.bugs):
@@ -391,25 +186,25 @@ class CatcherNode(Node):
             marker.type = Marker.CUBE
             marker.action = Marker.ADD
 
-            # Correctly access nested Pose
+            # Correctly access nested Pose (BugInfo -> PoseStamped -> Pose)
             marker.pose.position.x = bug.pose.pose.position.x
             marker.pose.position.y = bug.pose.pose.position.y
             marker.pose.position.z = bug.pose.pose.position.z
             marker.pose.orientation = bug.pose.pose.orientation
 
-            # Highlight Target
+            # Highlight Target Logic for Visualization
             if bug.target:
                 marker.scale.x = 0.05
                 marker.scale.y = 0.05
                 marker.scale.z = 0.05
                 marker.color.r = 0.0
                 marker.color.g = 0.0
-                marker.color.b = 0.0  # Black
+                marker.color.b = 0.0  # Black for target
             else:
                 marker.scale.x = 0.03
                 marker.scale.y = 0.03
                 marker.scale.z = 0.03
-                # Simple color map
+                # Color mapping
                 if bug.color == 'red':
                     marker.color.r = 1.0
                 elif bug.color == 'blue':
@@ -420,12 +215,19 @@ class CatcherNode(Node):
                     marker.color.r = 1.0
                     marker.color.g = 0.75
                     marker.color.b = 0.8
+                elif bug.color == 'orange':
+                    marker.color.r = 1.0
+                    marker.color.g = 0.5
+                    marker.color.b = 0.0
+                elif bug.color == 'purple':
+                    marker.color.r = 0.5
+                    marker.color.b = 0.5
                 else:
                     marker.color.r = 1.0
-                    marker.color.g = 1.0  # White/Yellow for others
+                    marker.color.g = 1.0  # White/Yellow default
 
             marker.color.a = 1.0
-            marker.lifetime.sec = 0
+            marker.lifetime.sec = 0  # Persistent until next update
             marker_array.markers.append(marker)
 
         self.marker_pub.publish(marker_array)
@@ -447,6 +249,146 @@ class CatcherNode(Node):
         # Break apart the message and store the color and pose in a dictionary:
         for drop_pose in drop_msg.base_poses:
             self.drop_locs[drop_pose.color] = drop_pose.pose
+
+    def new_TCP(self):
+        """Attach a new TCP frame for the gripper."""
+        prim = SolidPrimitive()
+        prim.type = SolidPrimitive.CYLINDER
+        prim.dimensions = [0.13, 0.12]  # height, radius
+
+        fixture_pose = Pose()
+        fixture_pose.position.x = OFFSET_X
+        fixture_pose.position.y = 0.0
+        fixture_pose.position.z = -OFFSET_Z / 2.0
+        fixture_pose.orientation.w = 1.0
+
+        fixture_name = 'new_tcp_fixture'
+        obs = Obstacle(fixture_name, fixture_pose, prim)
+
+        self.mpi.ps.add_obstacle(obs)
+        self.mpi.ps.attach_obstacle(fixture_name)
+
+        self.get_logger().info('New TCP frame configured for gripper.')
+
+    # =========================================================================
+    # Callbacks (Input Handling)
+    # =========================================================================
+
+    def wrist_target_callback(self, msg):
+        """Receives high-priority target data from Wrist Cam / Target Decision."""
+        if msg is None:
+            return
+
+        if self.state in [State.IDLE, State.STALKING]:
+            self.current_target_info = msg
+            self.current_target_info.pose.pose.orientation.x = 1.0
+            self.current_target_info.pose.pose.orientation.y = 0.0
+            self.current_target_info.pose.pose.orientation.z = 0.0
+            self.current_target_info.pose.pose.orientation.w = 0.0
+
+            if self.state == State.IDLE:
+                self.get_logger().info(f'Target Found ({msg.color}). Start STALKING.')
+
+                # Snapshot inventory count before starting
+                self.count_before_catch = self.inventory_counts.get(msg.color, 0)
+
+                self.state = State.STALKING
+
+    def sky_observer_callback(self, msg):
+        """Maintains global awareness: updates inventory counts and RViz markers."""
+        # Update Inventory Counts
+        temp_counts = {}
+        for bug in msg.bugs:
+            c = bug.color
+            temp_counts[c] = temp_counts.get(c, 0) + 1
+        self.inventory_counts = temp_counts
+
+        # Visualize Scene in RViz
+        self._publish_markers(msg)
+
+    # =========================================================================
+    # Main Control Loop (State Machine)
+    # =========================================================================
+
+    async def control_loop(self):
+        """Check the current state and execute the corresponding logic."""
+        # If an async action is currently running, do not re-enter.
+        if self.action_pending:
+            return
+
+        try:
+            self.action_pending = True  # Lock
+
+            if self.state == State.IDLE:
+                # Do nothing, waiting for wrist callback
+                # await self.mpi.GetReady()
+                pass
+
+            elif self.state == State.STALKING:
+                if (self.get_clock().now() - self.last_traj_time) > Duration(seconds=0.01):
+                    if self.current_target_info:
+                        target_to_send = self.current_target_info
+                        print(target_to_send)
+                        # target_to_send.pose.pose.position.x += OFFSET_X
+                        target_to_send.pose.pose.position.z = self.grasp_z
+                        log_msg = (
+                            'DEBUG: Calling stalking_pick for '
+                            f'{target_to_send.color} at Height Z='
+                            f'{target_to_send.pose.pose.position.z:.3f}'
+                        )
+                        self.get_logger().debug(log_msg)
+                        success = await self.bm.stalking_pick(target_to_send)
+                        self.last_traj_time = self.get_clock().now()
+
+                        if success:
+                            log_msg = (
+                                '>>> STALKING SUCCESS: Bug Gripped! Transitioning to DROPPING.'
+                            )
+                            self.get_logger().info(log_msg)
+                            self.state = State.DROPPING
+                        else:
+                            # Still approaching or planning failed (not due to Obstacle)
+                            pass
+
+            elif self.state == State.DROPPING:
+                color = self.current_target_info.color
+                self.get_logger().info(f'DEBUG: Dropping {color} bug...')
+                drop_coords = self.drop_locations.get(color, self.drop_locations['default'])
+
+                drop_pose = Pose()
+                drop_pose.position.x = drop_coords[0]
+                drop_pose.position.y = drop_coords[1]
+                drop_pose.position.z = drop_coords[2]
+                drop_pose.orientation.x = 1.0
+                drop_pose.orientation.w = 0.0
+
+                await self.mpi.GoTo(drop_pose)
+                await self.mpi.OpenGripper()
+                self.state = State.VERIFYING
+
+            elif self.state == State.VERIFYING:
+                self.get_logger().info('DEBUG: Verifying catch...')
+                await self.mpi.GetReady()
+                await asyncio.sleep(1.0)
+
+                current_count = self.inventory_counts.get(self.current_target_info.color, 0)
+                if current_count < self.count_before_catch:
+                    self.get_logger().info('>>> SUCCESS: Count decreased.')
+                else:
+                    self.get_logger().warn('>>> WARNING: Count did not decrease.')
+
+                self.current_target_info = None
+                if self.loop_execution:
+                    self.state = State.IDLE
+                    self.get_logger().info('Looping: Reset to IDLE.')
+                else:
+                    self.get_logger().info('Task Complete. Stopping.')
+
+        except RuntimeError as e:
+            self.get_logger().error(f'Error in control loop: {e}')
+            self.state = State.IDLE  # Reset on error
+        finally:
+            self.action_pending = False  # Unlock
 
 
 def main(args=None):

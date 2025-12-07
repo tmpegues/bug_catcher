@@ -544,6 +544,7 @@ class MotionPlanner:
         request.waypoints = waypoints
         request.avoid_collisions = True
         request.max_step = 0.05
+        # request.jump_threshold = 0.1
 
         ##################### Begin_Citation [4] ################## # noqa: E26
         # This constraint prevents the "joint out of limits" ERROR
