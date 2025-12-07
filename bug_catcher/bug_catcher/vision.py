@@ -3,11 +3,13 @@ The script implements the Vision class for the 'bug_catcher' package.
 
 It handles the low-level image processing tasks, including loading HSV calibration
 data, generating binary masks for specific colors, detecting contours, and
-tracking objects over time using the SORT algorithm.
+tracking objects over time.
 """
 
 import cv2
+
 import numpy as np
+
 import yaml
 
 
@@ -18,14 +20,13 @@ class Vision:
     Attributes
     ----------
     blur_ksize (int): Kernel size for Gaussian blur to reduce noise.
-    tracker (Sort): Instance of the SORT tracker for persistent object IDs.
     colors (dict): Dictionary storing HSV thresholds (low, high) for each color.
 
     """
 
     def __init__(self):
         """Initialize the Vision processor."""
-        # Kernel size for blurring
+        # Kernel size for blurring. Has to be an odd number.
         self.blur_ksize = 13
 
         # Dictionary to store loaded color profiles
@@ -93,7 +94,6 @@ class Vision:
         kernel = np.ones((5, 5), np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-        # mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
         return mask
 
@@ -101,8 +101,10 @@ class Vision:
         """
         Detect objects of a specific color within the frame.
 
-        Finds external contours on the generated mask, filters them by area size,
-        and prepares the bounding box data for the tracker.
+        Finds external contours on the generated mask, selects the largest contour,
+        then filters and returns contours whose area is within ±50 of the largest
+        contour; it also draws the raw detection contours on a copy of the frame to
+        prepare data for the tracker.
 
         Args:
         ----
@@ -111,9 +113,9 @@ class Vision:
 
         Returns
         -------
-        detections (np.ndarray): Array of detections [x1, y1, x2, y2, score] for SORT.
-        display_frame (np.ndarray): A copy of the frame with raw detection boxes drawn.
-        mask (np.ndarray): The binary mask used for detection.
+        permissible_contours (list[np.ndarray]): Array of contours within the size threshold.
+        display_frame (np.ndarray): A copy of the frame with raw detection contours drawn.
+        mask (np.ndarray): The binary mask used for detection. A blank mask if color not found.
 
         """
         mask = self.get_mask(frame, color_name)
@@ -131,12 +133,9 @@ class Vision:
         # Find external contours
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        # Finding the largest contour
-
+        # Initialize variables to find the largest contour and list of permissible contours
         largest_contour = None
         max_area = 0
-
-        # Find the permissible contours list
         permissible_contour = []
 
         for cnt in contours:
@@ -151,19 +150,16 @@ class Vision:
                 max_area = area
                 largest_contour = cnt
 
-        # after finding the largest contour, find the permissible contours
+        # after finding the largest contour, we find the permissible contours
+        max_area = cv2.contourArea(largest_contour)
         if largest_contour is not None:
             for cnt in contours:
                 area = cv2.contourArea(cnt)
-
-                #print(area)
-                if (
-                    area < cv2.contourArea(largest_contour) + 50
-                    and area > cv2.contourArea(largest_contour) - 50
-                ):
+                # Check if the contour is similar in size to the largest contour
+                if abs(area - max_area) <= 50:
                     permissible_contour.append(cnt)
 
-        # If we found a valid object
+        # If a valid contour is found, draw it on the display frame
         if len(permissible_contour) > 0:
             # Draw the RAW contour in RED (to show what was detected)
             for cont in permissible_contour:
@@ -174,16 +170,16 @@ class Vision:
 
     def update_tracker(self, contours, frame):
         """
-        Assign temporary IDs to detected contours and draw visualizations.
+        Assign IDs to detected contours and draw visualizations.
 
         Args:
         ----
-        contours (np.ndarray): Array of contours.
+        contours (list[np.ndarray]): Array of contours.
         frame (np.ndarray): The frame to draw tracking visualizations on.
 
         Returns
         -------
-        results (list): List of tuples [(track_id, center_x, center_y), ...].
+        results (list): List of tuples [(obj_id, center_x, center_y), ...].
         frame (np.ndarray): The frame with tracking bounding boxes and IDs drawn.
 
         """
@@ -203,11 +199,11 @@ class Vision:
 
             cv2.drawContours(frame, [cnt], -1, (0, 255, 0), 3)
 
-            # Draw the Center Point
+            # 2. Draw the Center Point
             cv2.circle(frame, (cx, cy), 7, (255, 0, 0), -1)  # Blue dot
             cv2.circle(frame, (cx, cy), 3, (255, 255, 255), -1)  # White inner dot
 
-            # Draw ID
+            # 3. Draw ID
             cv2.putText(
                 frame,
                 f'Target (ID:{obj_id})',
@@ -219,11 +215,5 @@ class Vision:
             )
             results.append((obj_id, cx, cy))
             obj_id += 1
-
-        """else:
-            # Fallback to bounding rect center if moments fail
-            x, y, w, h = cv2.boundingRect(cnt)
-            cx = int(x + w / 2)
-            cy = int(y + h / 2)"""
 
         return results, frame
