@@ -731,6 +731,7 @@ class TargetDecision(Node):
                 # Establish the locations for the drop off pads:
                 self.drop_locs = {}
                 for i in range(self.pad_start, self.pad_end + 1):
+                    self.get_logger().info(f' i: {i}')
                     # Listen and store the tf of base_marker seen by camera:
                     try:
                         tf_msg = self.tf_buffer.lookup_transform(
@@ -745,6 +746,7 @@ class TargetDecision(Node):
                         pose.position.y = float(tf_msg.transform.translation.y)
                         pose.position.z = float(tf_msg.transform.translation.z)
                         pose.orientation.w = 1.0
+                        self.get_logger().info(f'i: {i}')
                         self.get_logger().info(f' pose is {pose}')
                         # Set the color string of the id:
                         if i == self.pad_start:
