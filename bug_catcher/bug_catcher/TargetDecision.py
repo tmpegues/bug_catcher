@@ -111,8 +111,6 @@ class TargetDecision(Node):
         self.declare_parameter('base_frame', 'base')
         self.declare_parameter('gripper_frame', 'fer_hand_tcp')
         self.declare_parameter('color_path', '')
-        self.declare_parameter('pad_start', 5)
-        self.declare_parameter('pad_end', 10)
 
         # Declare tag calibration parameters:
         self.declare_parameter('calibration.tags.tag_1.x', -0.1143)
@@ -123,52 +121,38 @@ class TargetDecision(Node):
         self.declare_parameter('calibration.tags.tag_3.y', 0.4064)
         self.declare_parameter('calibration.tags.tag_4.x', 0.6858)
         self.declare_parameter('calibration.tags.tag_4.y', -0.4572)
-        # Set the color switch location (w.r.t base):
-        self.declare_parameter('color_switch_x', 0.76835)
-        self.declare_parameter('color_switch_y', 0.00000)
-        self.declare_parameter('color_switch_z', 0.1524)
 
         # Set the tag and config parameter values:
         self.target_color = self.get_parameter('default_color').value
         self.base_frame = self.get_parameter('base_frame').value
         self.gripper_frame = self.get_parameter('gripper_frame').value
         self.color_path = self.get_parameter('color_path').value
-        self.pad_start = self.get_parameter('pad_start').get_parameter_value()._integer_value
-        self.pad_end = self.get_parameter('pad_end').get_parameter_value()._integer_value
         self.tag_params = {
             1: (
-                self.get_parameter('calibration.tags.tag_1.x').get_parameter_value().double_value,
-                self.get_parameter('calibration.tags.tag_1.y').get_parameter_value().double_value,
-            ),
-            2: (
                 self.get_parameter('calibration.tags.tag_2.x').get_parameter_value().double_value,
                 self.get_parameter('calibration.tags.tag_2.y').get_parameter_value().double_value,
             ),
-            3: (
+            2: (
                 self.get_parameter('calibration.tags.tag_3.x').get_parameter_value().double_value,
                 self.get_parameter('calibration.tags.tag_3.y').get_parameter_value().double_value,
             ),
-            4: (
+            3: (
                 self.get_parameter('calibration.tags.tag_4.x').get_parameter_value().double_value,
                 self.get_parameter('calibration.tags.tag_4.y').get_parameter_value().double_value,
             ),
+            4: (
+                self.get_parameter('calibration.tags.tag_1.x').get_parameter_value().double_value,
+                self.get_parameter('calibration.tags.tag_1.y').get_parameter_value().double_value,
+            ),
         }
-        self.color_switch_x = (
-            self.get_parameter('color_switch_x').get_parameter_value().double_value
-        )
-        self.color_switch_y = (
-            self.get_parameter('color_switch_y').get_parameter_value().double_value
-        )
-        self.color_switch_z = (
-            self.get_parameter('color_switch_z').get_parameter_value().double_value
-        )
 
         # TF Buffer
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
         # Vision Setup
-        self.vision = Vision()
+        self.sky_cam_vision = Vision()
+        self.wrist_cam_vision = Vision()
         self.bridge = CvBridge()
         self._load_calibrated_colors()
 
@@ -182,8 +166,6 @@ class TargetDecision(Node):
         self.bug_array_pub = self.create_publisher(BugArray, '/bug_god/bug_array', 10)
         self.sky_debug_pub = self.create_publisher(Image, '/bug_god/debug_view', 10)
         self.sky_mask_pub = self.create_publisher(Image, '/bug_god/mask_view', 10)
-        self.target_switch_pub = self.create_publisher(String, '/target_color', 10)
-        self.switch_debug_pub = self.create_publisher(Image, '/bug_god/switch_view', 10)
 
         # ==================================
         # 3. Wrist Cam Setup
@@ -228,7 +210,6 @@ class TargetDecision(Node):
         # Translate Y-coordinate to match ROS REP-103 frame as OpenCV has a flipped y orientation.
         # X_ros =  Y_cv, Y_ros = -X_cv, Z_ros = Z_cv
         self.Tcv_to_ros = np.array([[0, 1, 0, 0], [-1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
-        self.Tros_to_cv = np.array([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
 
         # Establish Calibration Averaging Variables:
         self.num_april_tags = 4
@@ -237,8 +218,11 @@ class TargetDecision(Node):
         self.max_calibration_frames = 300  # Average over 300 frames (10 seconds)
         self.state = State.INITIALIZING
 
-        # Set the switch mask to remove detection of color task switcher:
-        self.switch_mask = None
+        self.get_logger().info(f'Node started. Current Target: [{self.target_color}]')
+
+        # Store the latest sky target seen for wrist cam use
+        self.latest_sky_target = None
+        self.last_sky_update_time = self.get_clock().now()
 
         self.get_logger().info(f'Node started. Current Target: [{self.target_color}]')
 
@@ -247,23 +231,35 @@ class TargetDecision(Node):
     # -----------------------------------------------------------------
     def _load_calibrated_colors(self):
         """Load calibrated colors from YAML file."""
-        if not self.color_path:
-            pkg_share = get_package_share_directory('bug_catcher')
-            self.color_path = os.path.join(pkg_share, 'config', 'calibrated_colors.yaml')
-            self.get_logger().info(
-                f'No color_path param provided. Using default: {self.color_path}'
-            )
+        pkg_share = get_package_share_directory('bug_catcher')
+        default_path = os.path.join(pkg_share, 'config', 'sky_cam_colors.yaml')
+        # --- Load Sky Cam ---
+        if not self.color_path_sky_cam:
+            self.color_path_sky_cam = default_path
+            self.get_logger().info(f'No sky path param. Using default: {default_path}')
 
         try:
-            self.get_logger().info(f'Loading calibration from: {self.color_path}')
-            self.vision.load_calibration(self.color_path)
-            if self.target_color not in self.vision.colors:
-                self.get_logger().warn(
-                    f"Default color '{self.target_color}' not found in YAML! "
-                    f'Waiting for command...'
-                )
-        except (FileNotFoundError, ValueError, KeyError, IOError) as e:
-            self.get_logger().error(f'Failed to load calibration: {e}')
+            self.get_logger().info(f'Loading Sky Calibration: {self.color_path_sky_cam}')
+            self.sky_cam_vision.load_calibration(self.color_path_sky_cam)
+        except (IOError, FileNotFoundError) as e:
+            self.get_logger().error(f'Failed to load Sky calibration: {e}')
+
+        # --- Load Wrist Cam ---
+        if not self.color_path_wrist_cam:
+            self.color_path_wrist_cam = default_path  # Fallback to same default or a different one
+            self.get_logger().info(f'No wrist path param. Using default: {default_path}')
+
+        try:
+            self.get_logger().info(f'Loading Wrist Calibration: {self.color_path_wrist_cam}')
+            self.wrist_cam_vision.load_calibration(self.color_path_wrist_cam)
+        except (IOError, FileNotFoundError) as e:
+            self.get_logger().error(f'Failed to load Wrist calibration: {e}')
+
+        # Verify Target Color in both
+        if self.target_color not in self.sky_cam_vision.colors:
+            self.get_logger().warn(f"Target '{self.target_color}' missing in Sky config!")
+        if self.target_color not in self.wrist_cam_vision.colors:
+            self.get_logger().warn(f"Target '{self.target_color}' missing in Wrist config!")
 
     def _pixel_to_pose(self, u, v, intrinsics, height):
         """
@@ -597,7 +593,7 @@ class TargetDecision(Node):
                     # Transform the Camera_Link to Ros:
                     optical_link = self.Tcv_to_ros @ optical_link
                     self.optical_link = optical_link
-                    self.state = State.CALIBRATING_SKYCAM
+                    self.state = State.CALIBRATING
                     self.get_logger().info('Camera tf available')
                 except (
                     tf2_ros.LookupException,
@@ -738,15 +734,13 @@ class TargetDecision(Node):
                 # Loop through Tags 5-10 and set the location of the drop pads:
                 # Establish the locations for the drop off pads:
                 self.drop_locs = {}
-                self.get_logger().info(f'pad_start: {self.pad_start}')
-                for i in range(self.pad_start, self.pad_end + 1):
+                for i in range(self.pad_start, self.pad_end):
                     # Listen and store the tf of base_marker seen by camera:
                     try:
                         tf_msg = self.tf_buffer.lookup_transform(
                             'base',
                             f'tag_{i}',
                             rclpy.time.Time(),
-                            timeout=rclpy.duration.Duration(seconds=1.0),
                         )
                         # Convert the transform message to a matrix and store.
                         pose = Pose()
@@ -754,21 +748,19 @@ class TargetDecision(Node):
                         pose.position.y = float(tf_msg.transform.translation.y)
                         pose.position.z = float(tf_msg.transform.translation.z)
                         pose.orientation.w = 1.0
-                        self.get_logger().info(f'i: {i}')
-                        self.get_logger().info(f'pad_start: {self.pad_start}')
-                        self.get_logger().info(f' pose is {pose}')
                         # Set the color string of the id:
-                        if i == self.pad_start:
+                        # These id to color mappings are consistant across the package:
+                        if i == 1:
                             self.drop_locs['pink'] = pose
-                        elif i == self.pad_start + 1:
+                        elif i == 2:
                             self.drop_locs['green'] = pose
-                        elif i == self.pad_start + 2:
+                        elif i == 3:
                             self.drop_locs['blue'] = pose
-                        elif i == self.pad_start + 3:
+                        elif i == 4:
                             self.drop_locs['orange'] = pose
-                        elif i == self.pad_start + 4:
+                        elif i == 5:
                             self.drop_locs['purple'] = pose
-                        elif i == self.pad_start + 5:
+                        elif i == 6:
                             self.drop_locs['yellow'] = pose
                     except (
                         tf2_ros.LookupException,
@@ -777,13 +769,13 @@ class TargetDecision(Node):
                     ) as e:
                         self.get_logger().info(f'Unable to find drop location for tag_{i}: {e}')
                 # Publish the locations of the drop points:
-                base_poses = BasePoseArray()
+                msg = BasePoseArray()
                 for color, pose in self.drop_locs.items():
                     pair = BasePose()
                     pair.color = color
                     pair.pose = pose
-                    base_poses.base_poses.append(pair)
-                self.drop_pub.publish(base_poses)
+                    msg.entries.append(pair)
+                self.drop_pub.publish(msg)
                 # Switch to the Publication state:
                 self.state = State.PUBLISHING
             case State.PUBLISHING:
@@ -831,10 +823,6 @@ class TargetDecision(Node):
                     cv2.rectangle(mask, (u_L, v_L), (u_R, v_R), 255, -1)
 
                     frame = cv2.bitwise_and(frame, frame, mask=mask)
-                    # if switch mask is not none, apply it:
-                    if self.switch_mask is not None:
-                        inverted_mask = cv2.bitwise_not(self.switch_mask)
-                        frame = cv2.bitwise_and(frame, frame, mask=inverted_mask)
                     # ####################### End_Citation [NK3] #####################
                 except CvBridgeError as e:
                     self.get_logger().error(f'CV Bridge Error: {e}, unable to extract corners!')
@@ -862,10 +850,10 @@ class TargetDecision(Node):
                 bug_array.header.stamp = msg.header.stamp
                 bug_array.header.frame_id = self.base_frame
 
-                final_debug_frame = frame.copy()
-                closest_dist = float('inf')
-                target_bug_index = -1
-                all_detected_bugs = []
+        final_debug_frame = frame.copy()
+        closest_dist = float('inf')
+        target_bug_index = -1
+        all_detected_bugs = []
 
                 # 3. Iterate colors
                 for color_name in self.vision.colors.keys():
@@ -920,97 +908,31 @@ class TargetDecision(Node):
                             dy = pose_base.position.y - gripper_pos_base.y
                             dist = dx**2 + dy**2
 
-                            if dist < closest_dist:
-                                closest_dist = dist
-                                target_bug_index = len(all_detected_bugs)
+                    if dist < closest_dist:
+                        closest_dist = dist
+                        target_bug_index = len(all_detected_bugs)
 
                         all_detected_bugs.append(bug_info)
 
-                # 4. Mark Target Bug
-                if target_bug_index != -1:
-                    all_detected_bugs[target_bug_index].target = True
-                    cv2.putText(
-                        final_debug_frame,
-                        f'TARGET: {self.target_color}',
-                        (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        1,
-                        (0, 255, 0),
-                        2,
-                    )
+        # 4. Mark Target Bug
+        if target_bug_index != -1:
+            all_detected_bugs[target_bug_index].target = True
+            cv2.putText(
+                final_debug_frame,
+                f'TARGET: {self.target_color}',
+                (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,
+                (0, 255, 0),
+                2,
+            )
 
-                bug_array.bugs = all_detected_bugs
-                self.bug_array_pub.publish(bug_array)
-                self.sky_debug_pub.publish(
-                    self.bridge.cv2_to_imgmsg(final_debug_frame, encoding='bgr8')
-                )
+        bug_array.bugs = all_detected_bugs
+        self.bug_array_pub.publish(bug_array)
+        self.sky_debug_pub.publish(self.bridge.cv2_to_imgmsg(final_debug_frame, encoding='bgr8'))
 
                 if mask is not None:
                     self.sky_mask_pub.publish(self.bridge.cv2_to_imgmsg(mask, encoding='mono8'))
-
-                # Create a mask of the image at the color_switch point to change the color when
-                # the block has been changed. (Pre_existing mask exists on image)
-                frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-                # save the switch mask to actively apply it to the color detection masks.
-                #   This will ensure we don't detect the color block as a bug.
-                self.switch_mask = np.zeros(frame.shape[:2], dtype='uint8')
-                # Set the current location in base:
-                vec = np.array(
-                    [self.color_switch_x, self.color_switch_y, self.color_switch_z, 1.0]
-                )
-
-                # Transform this to the camera frame:
-                try:
-                    tf_msg = self.tf_buffer.lookup_transform(
-                        'bug_god_color_optical_frame',
-                        'bug_god_link',
-                        rclpy.time.Time(),
-                    )
-                    # Convert the transform message to a matrix and store.
-                    t = tf_msg.transform.translation
-                    q = tf_msg.transform.rotation
-                    Rm = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
-                    # Save this transform statically in the node:
-                    transform = np.eye(4)
-                    transform[:3, :3] = Rm
-                    transform[:3, 3] = [t.x, t.y, t.z]
-                    vec_cam_ros = transform @ vec
-                    vec_cam_cv = vec_cam_ros @ self.Tros_to_cv
-                    x, y, z, _ = vec_cam_cv
-                except (
-                    tf2_ros.LookupException,
-                    tf2_ros.ExtrapolationException,
-                    tf2_ros.ConnectivityException,
-                ) as e:
-                    self.get_logger().info(f'Transform  lookup failed: {e}')
-
-                # 3D point in camera frame (meters)
-                X_L, Y_L, Z_L = x, y, z
-                X_R, Y_R, Z_R = x, y, z
-                # Left Tag location:
-                u_L = int(fx * (X_L / Z_L) + cx) - 30
-                v_L = int(fy * (Y_L / Z_L) + cy) - 30
-                # Right Tag Location:
-                u_R = int(fx * (X_R / Z_R) + cx) + 30
-                v_R = int(fy * (Y_R / Z_R) + cy) + 30
-
-                # Draw the mask to be within the tags:
-                cv2.rectangle(self.switch_mask, (u_L, v_L), (u_R, v_R), 255, -1)
-                frame = cv2.bitwise_and(frame, frame, mask=self.switch_mask)
-
-                # Loop through colors and if it returns a position, then switch the target.
-                switch_debug_frame = frame.copy()
-                for color_name in self.vision.colors.keys():
-                    detections, _, _ = self.vision.detect_objects(frame, color_name)
-                    results, final_debug_frame = self.vision.update_tracker(
-                        detections, switch_debug_frame
-                    )
-                    # If a color is detected publish that color to the topic:
-                    if len(detections) != 0:
-                        self.target_switch_pub.publish(String(data=color_name))
-                self.switch_debug_pub.publish(
-                    self.bridge.cv2_to_imgmsg(switch_debug_frame, encoding='bgr8')
-                )
 
     def wrist_image_cb(self, msg):
         """
@@ -1038,12 +960,19 @@ class TargetDecision(Node):
         cam_height, transform_stamped = self.get_cam_height_and_transform(cam_frame_id)
 
         if cam_height is None:
+            self.get_logger().info('Wrist Cam height not yet available.')
             return  # Don't process information if the camera height isn't calibrated.
 
         # 1. Detect ONLY the target color
         detections, _, mask = self.vision.detect_objects(frame, self.target_color)
         results, final_debug_frame = self.vision.update_tracker(detections, frame)
 
+        final_target = None
+        source = 'NONE'
+
+        # =================================
+        # Condition 1: Use Wrist Cam Target
+        # =================================
         # Assume the largest blob (first result) is the target in the wrist view
         if len(results) > 0:
             obj_id, u, v = results[0]
@@ -1060,10 +989,15 @@ class TargetDecision(Node):
                     target_bug = BugInfo()
                     target_bug.id = int(obj_id)
                     target_bug.color = self.target_color
-                    target_bug.target = True  # Wrist cam only tracks the target
+                    target_bug.target = True
                     target_bug.pose = correct_pose_stamped
 
+                    final_target = target_bug
+                    final_target.pose.header.stamp = msg.header.stamp  # Update timestamp
+                    source = 'WRIST_CAM'
+
                     self.wrist_target_pub.publish(target_bug)
+                    print(target_bug)
 
                     cv2.putText(
                         final_debug_frame,
@@ -1075,21 +1009,33 @@ class TargetDecision(Node):
                         2,
                     )
                 except (AttributeError, TypeError) as e:
-                    self.get_logger().warn(f'Failed to apply transform in wrist_image_cb: {e}')
+                    self.get_logger().info(f'No target found in wrist_camera: {e}')
 
-        cv2.putText(
-            final_debug_frame,
-            f'WRIST: {self.target_color.upper()}',
-            (10, 30),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            (0, 255, 255),
-            2,
-        )
+        elif self.latest_sky_target is not None:
+            # =================================
+            # Condition 2: Use Sky Cam Target
+            # =================================
+            # Check if the latest sky target is recent enough (1 second timeout)
+            time_diff = (self.get_clock().now() - self.last_sky_update_time).nanoseconds / 1e9
+            if time_diff < 0.5:
+                final_target = self.latest_sky_target
+                final_target.pose.header.stamp = msg.header.stamp
+                source = 'BUG_GOD'
 
         # 2. Publish
-        self.wrist_debug_pub.publish(self.bridge.cv2_to_imgmsg(final_debug_frame, encoding='bgr8'))
+        if final_target is not None:
+            self.wrist_target_pub.publish(final_target)
+            cv2.putText(
+                final_debug_frame,
+                f'SOURCE: {source}',
+                (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                (0, 255, 255),
+                2,
+            )
 
+        self.wrist_debug_pub.publish(self.bridge.cv2_to_imgmsg(final_debug_frame, encoding='bgr8'))
         if mask is not None:
             self.wrist_mask_pub.publish(self.bridge.cv2_to_imgmsg(mask, encoding='mono8'))
 
