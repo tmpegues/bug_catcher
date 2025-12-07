@@ -14,6 +14,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/Pick.srv"
   "msg/BugInfo.msg"
   "msg/BugArray.msg"
+  "msg/BasePose.msg"
+  "msg/BasePoseArray.msg"
   DEPENDENCIES
   geometry_msgs)
 

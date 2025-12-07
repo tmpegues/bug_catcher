@@ -26,7 +26,7 @@ Parameters
 from bug_catcher.motionplanninginterface import MotionPlanningInterface
 from bug_catcher.planningscene import Obstacle
 
-from bug_catcher_interfaces.msg import BugArray, BugInfo
+from bug_catcher_interfaces.msg import BugArray, BugInfo, BasePoseArray
 
 from moveit_msgs.msg import PlanningScene
 
@@ -96,6 +96,10 @@ class CatcherNode(Node):
         self.bug_sub = self.create_subscription(
             BugArray, '/bug_god/bug_array', self.bug_callback, 10
         )
+        # Subscription to gather and store the poses of the drop locations:
+        self.drop_sub = self.create_subscription(
+            BasePoseArray, 'drop_locs', self.drop_callback, 10
+        )
 
         # PUBLISHERS:
         markerQoS = QoSProfile(depth=10, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
@@ -105,6 +109,9 @@ class CatcherNode(Node):
         # Establish the required connections and trackers for updating the planningscene each call.
         # Save the last target bug for removal each update:
         self.last_target_bug = None
+
+        # Establish the locations for the drop off pads:
+        self.drop_locs = {}
 
         self.get_logger().info('Catcher Node: Ready. Listening to /wrist_camera/target_bug...')
 
@@ -335,6 +342,24 @@ class CatcherNode(Node):
         # Update Rviz markers for all colored bugs:
         self.marker_array.markers = self.markers
         self.mark_pub.publish(self.marker_array)
+
+    def drop_callback(self, drop_msg):
+        """
+        Update base drop locations for each color bug.
+
+        Args
+        ----
+            drop_msg:
+                A dict of color base locations:
+                - color : str
+                    The bug's color label (e.g., 'pink', 'blue', ...).
+                - pose : geometry_msgs/PoseStamped
+                The estimated pose of the bug in the camera/base frame.
+
+        """
+        # Break apart the message and store the color and pose in a dictionary:
+        for drop_pose in drop_msg.entries:
+            self.drop_locs[drop_pose.color] = drop_pose.pose
 
 
 def main(args=None):

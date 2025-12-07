@@ -42,7 +42,7 @@ from ament_index_python.packages import get_package_share_directory
 from bug_catcher.sort import Sort
 from bug_catcher.vision import Vision
 
-from bug_catcher_interfaces.msg import BugArray, BugInfo
+from bug_catcher_interfaces.msg import BugArray, BugInfo, BasePoseArray, BasePose
 
 import cv2
 
@@ -80,7 +80,8 @@ class State(Enum):
     """
 
     INITIALIZING = auto()
-    CALIBRATING = auto()
+    CALIBRATING_SKYCAM = auto()
+    CALIBRATING_DROPS = auto()
     PUBLISHING = auto()
 
 
@@ -110,6 +111,8 @@ class TargetDecision(Node):
         self.declare_parameter('base_frame', 'base')
         self.declare_parameter('gripper_frame', 'fer_hand_tcp')
         self.declare_parameter('color_path', '')
+        self.declare_parameter('pad_start', '5')
+        self.declare_parameter('pad_end', '10')
 
         # Declare tag calibration parameters:
         self.declare_parameter('calibration.tags.tag_1.x', -0.1143)
@@ -126,6 +129,8 @@ class TargetDecision(Node):
         self.base_frame = self.get_parameter('base_frame').value
         self.gripper_frame = self.get_parameter('gripper_frame').value
         self.color_path = self.get_parameter('color_path').value
+        self.pad_start = self.get_parameter('pad_start').value
+        self.pad_end = self.get_parameter('pad_end').value
         self.tag_params = {
             1: (
                 self.get_parameter('calibration.tags.tag_2.x').get_parameter_value().double_value,
@@ -171,6 +176,8 @@ class TargetDecision(Node):
         self.wrist_target_pub = self.create_publisher(BugInfo, '/wrist_camera/target_bug', 10)
         self.wrist_debug_pub = self.create_publisher(Image, '/wrist_camera/debug_view', 10)
         self.wrist_mask_pub = self.create_publisher(Image, '/wrist_camera/mask_view', 10)
+        # Create a publisher for the drop locations:
+        self.drop_pub = self.create_publisher(BasePoseArray, 'drop_locs', 10)
 
         # ==================================
         # 4. Target Color Command Subscriber
@@ -488,6 +495,7 @@ class TargetDecision(Node):
         optical_tag_tf = {}  # Initialize the transfrom of camera to tag
         tag_optical_tf = {}  # Initialize the transform of the tag to camera.
 
+        # Loop through tags 1 to 4 for camera calibration:
         for i in range(1, num_tags + 1):
             # Listen and store the tf of base_marker seen by camera:
             try:
@@ -578,7 +586,7 @@ class TargetDecision(Node):
                     tf2_ros.ConnectivityException,
                 ) as e:
                     self.get_logger().info(f'Transform for camera still unavailable: {e}')
-            case State.CALIBRATING:
+            case State.CALIBRATING_SKYCAM:
                 # Perform a static callibration at Launch:
                 # Compute per-frame avearge base->camera transform:
                 T_base_camera_frame = self.calibrateCamera_April(self.num_april_tags)
@@ -615,7 +623,7 @@ class TargetDecision(Node):
                     self.get_logger().info('Static calibration complete.')
 
                     # Calibration is complete, so switch to Publishing Task:
-                    self.state = State.PUBLISHING
+                    self.state = State.CALIBRATING_DROPS
 
                     # Create the subscribers to start listening for bug detection:
                     sky_cb_group = MutuallyExclusiveCallbackGroup()
@@ -648,6 +656,7 @@ class TargetDecision(Node):
                         10,
                         callback_group=wrist_cb_group,
                     )
+
             case State.PUBLISHING:
                 pass
                 # All publishing will take place in the image callbacks
@@ -705,156 +714,212 @@ class TargetDecision(Node):
         if self.sky_intrinsics is None:
             return
 
-        try:
-            frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-            # Mask image to crop out unwanted filtering regions. (Tags will be established by now)
-            # ####################### Begin_Citation [NK3] ###################
-            mask = np.zeros(frame.shape[:2], dtype='uint8')
-
-            # Get the pixel locations of the top left and bottom right of the mask positions
-            #   This will map to markers 2 and 4.
-            tf_msg = self.tf_buffer.lookup_transform(
-                'bug_god_color_optical_frame',
-                'tag_2',
-                rclpy.time.Time(),
-            )
-            # Convert the transform message to a matrix and store.
-            t_left = tf_msg.transform.translation
-            tf_msg = self.tf_buffer.lookup_transform(
-                'bug_god_color_optical_frame',
-                'tag_4',
-                rclpy.time.Time(),
-            )
-            # Convert the transform message to a matrix and store.
-            t_right = tf_msg.transform.translation
-
-            # Calculate the 3D Position:
-            # Camera intrinsics matrix
-            K = self.sky_intrinsics
-            fx = K[0, 0]
-            fy = K[1, 1]
-            cx = K[0, 2]
-            cy = K[1, 2]
-            # 3D point in camera frame (meters)
-            X_L, Y_L, Z_L = t_left.x, t_left.y, t_left.z
-            X_R, Y_R, Z_R = t_right.x, t_right.y, t_right.z
-            # Left Tag location:
-            u_L = int(fx * (X_L / Z_L) + cx)
-            v_L = int(fy * (Y_L / Z_L) + cy)
-            # Right Tag Location:
-            u_R = int(fx * (X_R / Z_R) + cx)
-            v_R = int(fy * (Y_R / Z_R) + cy)
-
-            # Draw the mask to be within the tags:
-            cv2.rectangle(mask, (u_L, v_L), (u_R, v_R), 255, -1)
-
-            frame = cv2.bitwise_and(frame, frame, mask=mask)
-            # ####################### End_Citation [NK3] #####################
-        except CvBridgeError as e:
-            self.get_logger().error(f'CV Bridge Error: {e}, unable to extract mask corners!')
-            return
-
-        # 1. Get Transform Once per Frame
-        cam_frame_id = msg.header.frame_id
-        cam_height, transform_stamped = self.get_cam_height_and_transform(cam_frame_id)
-
-        if cam_height is None:
-            cam_height = 1.0  # Fallback height if TF is not ready
-
-        # 2. Get Gripper Position
-        gripper_pos_base = None
-
-        try:
-            gripper_tf = self.tf_buffer.lookup_transform(
-                self.base_frame, self.gripper_frame, rclpy.time.Time(seconds=0)
-            )
-            gripper_pos_base = gripper_tf.transform.translation
-        except tf2_ros.TransformException:
-            pass
-
-        bug_array = BugArray()
-        bug_array.header.stamp = msg.header.stamp
-        bug_array.header.frame_id = self.base_frame
-
-        final_debug_frame = frame.copy()
-        closest_dist = float('inf')
-        target_bug_index = -1
-        all_detected_bugs = []
-
-        # 3. Iterate colors
-        for color_name in self.vision.colors.keys():
-            detections, _, _ = self.vision.detect_objects(frame, color_name)
-            results, final_debug_frame = self.vision.update_tracker(detections, final_debug_frame)
-
-            for obj_id, u, v in results:
-                # Pixel -> Camera 3D
-                pose_cam = self._pixel_to_pose(u, v, self.sky_intrinsics, cam_height)
-
-                # Camera 3D -> Base 3D
-                if transform_stamped:
+        match self.state:
+            case State.CALIBRATING_DROPS:
+                # Loop through Tags 5-10 and set the location of the drop pads:
+                # Establish the locations for the drop off pads:
+                self.drop_locs = {}
+                for i in range(self.pad_start, self.pad_end):
+                    # Listen and store the tf of base_marker seen by camera:
                     try:
-                        pose_base = self.apply_transform(pose_cam, transform_stamped)
-                    except (AttributeError, TypeError) as e:
-                        self.get_logger().warn(f'Failed to apply transform: {e}')
-                        continue
-                else:
-                    continue
-
-                # Build PoseStamped
+                        tf_msg = self.tf_buffer.lookup_transform(
+                            'base',
+                            f'tag_{i}',
+                            rclpy.time.Time(),
+                        )
+                        # Convert the transform message to a matrix and store.
+                        pose = Pose()
+                        pose.position.x = float(tf_msg.transform.translation.x)
+                        pose.position.y = float(tf_msg.transform.translation.y)
+                        pose.position.z = float(tf_msg.transform.translation.z)
+                        pose.orientation.w = 1.0
+                        # Set the color string of the id:
+                        # These id to color mappings are consistant across the package:
+                        if i == 1:
+                            self.drop_locs['pink'] = pose
+                        elif i == 2:
+                            self.drop_locs['green'] = pose
+                        elif i == 3:
+                            self.drop_locs['blue'] = pose
+                        elif i == 4:
+                            self.drop_locs['orange'] = pose
+                        elif i == 5:
+                            self.drop_locs['purple'] = pose
+                        elif i == 6:
+                            self.drop_locs['yellow'] = pose
+                    except (
+                        tf2_ros.LookupException,
+                        tf2_ros.ExtrapolationException,
+                        tf2_ros.ConnectivityException,
+                    ) as e:
+                        self.get_logger().info(f'Unable to find drop location for tag_{i}: {e}')
+                # Publish the locations of the drop points:
+                msg = BasePoseArray()
+                for color, pose in self.drop_locs.items():
+                    pair = BasePose()
+                    pair.color = color
+                    pair.pose = pose
+                    msg.entries.append(pair)
+                self.drop_pub.publish(msg)
+                # Switch to the Publication state:
+                self.state = State.PUBLISHING
+            case State.PUBLISHING:
                 try:
-                    correct_pose_stamped = self._create_pose_stamped(pose_base, msg.header.stamp)
-                except (AttributeError, TypeError) as e:
-                    self.get_logger().error(f'Error creating safe pose: {e}')
-                    continue
+                    frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+                    # Mask image to crop out unwanted filtering regions. (Tags will be established)
+                    # ####################### Begin_Citation [NK3] ###################
+                    mask = np.zeros(frame.shape[:2], dtype='uint8')
 
-                # Build BugInfo
-                bug_info = BugInfo()
-                bug_info.id = int(obj_id)
-                bug_info.color = color_name
-                bug_info.pose = correct_pose_stamped
-                bug_info.target = False
+                    # Get the pixel locations of the top left/bottom right of the mask positions
+                    #   This will map to markers 2 and 4.
+                    tf_msg = self.tf_buffer.lookup_transform(
+                        'bug_god_color_optical_frame',
+                        'tag_2',
+                        rclpy.time.Time(),
+                    )
+                    # Convert the transform message to a matrix and store.
+                    t_left = tf_msg.transform.translation
+                    tf_msg = self.tf_buffer.lookup_transform(
+                        'bug_god_color_optical_frame',
+                        'tag_4',
+                        rclpy.time.Time(),
+                    )
+                    # Convert the transform message to a matrix and store.
+                    t_right = tf_msg.transform.translation
 
-                cv2.putText(
-                    final_debug_frame,
-                    f'{color_name}',
-                    (u, v - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    (255, 255, 255),
-                    1,
+                    # Calculate the 3D Position:
+                    # Camera intrinsics matrix
+                    K = self.sky_intrinsics
+                    fx = K[0, 0]
+                    fy = K[1, 1]
+                    cx = K[0, 2]
+                    cy = K[1, 2]
+                    # 3D point in camera frame (meters)
+                    X_L, Y_L, Z_L = t_left.x, t_left.y, t_left.z
+                    X_R, Y_R, Z_R = t_right.x, t_right.y, t_right.z
+                    # Left Tag location:
+                    u_L = int(fx * (X_L / Z_L) + cx)
+                    v_L = int(fy * (Y_L / Z_L) + cy)
+                    # Right Tag Location:
+                    u_R = int(fx * (X_R / Z_R) + cx)
+                    v_R = int(fy * (Y_R / Z_R) + cy)
+
+                    # Draw the mask to be within the tags:
+                    cv2.rectangle(mask, (u_L, v_L), (u_R, v_R), 255, -1)
+
+                    frame = cv2.bitwise_and(frame, frame, mask=mask)
+                    # ####################### End_Citation [NK3] #####################
+                except CvBridgeError as e:
+                    self.get_logger().error(f'CV Bridge Error: {e}, unable to extract corners!')
+                    return
+
+                # 1. Get Transform Once per Frame
+                cam_frame_id = msg.header.frame_id
+                cam_height, transform_stamped = self.get_cam_height_and_transform(cam_frame_id)
+
+                if cam_height is None:
+                    cam_height = 1.0  # Fallback height if TF is not ready
+
+                # 2. Get Gripper Position
+                gripper_pos_base = None
+
+                try:
+                    gripper_tf = self.tf_buffer.lookup_transform(
+                        self.base_frame, self.gripper_frame, rclpy.time.Time(seconds=0)
+                    )
+                    gripper_pos_base = gripper_tf.transform.translation
+                except tf2_ros.TransformException:
+                    pass
+
+                bug_array = BugArray()
+                bug_array.header.stamp = msg.header.stamp
+                bug_array.header.frame_id = self.base_frame
+
+                final_debug_frame = frame.copy()
+                closest_dist = float('inf')
+                target_bug_index = -1
+                all_detected_bugs = []
+
+                # 3. Iterate colors
+                for color_name in self.vision.colors.keys():
+                    detections, _, _ = self.vision.detect_objects(frame, color_name)
+                    results, final_debug_frame = self.vision.update_tracker(
+                        detections, final_debug_frame
+                    )
+
+                    for obj_id, u, v in results:
+                        # Pixel -> Camera 3D
+                        pose_cam = self._pixel_to_pose(u, v, self.sky_intrinsics, cam_height)
+
+                        # Camera 3D -> Base 3D
+                        if transform_stamped:
+                            try:
+                                pose_base = self.apply_transform(pose_cam, transform_stamped)
+                            except (AttributeError, TypeError) as e:
+                                self.get_logger().warn(f'Failed to apply transform: {e}')
+                                continue
+                        else:
+                            continue
+
+                        # Build PoseStamped
+                        try:
+                            correct_pose_stamped = self._create_pose_stamped(
+                                pose_base, msg.header.stamp
+                            )
+                        except (AttributeError, TypeError) as e:
+                            self.get_logger().error(f'Error creating safe pose: {e}')
+                            continue
+
+                        # Build BugInfo
+                        bug_info = BugInfo()
+                        bug_info.id = int(obj_id)
+                        bug_info.color = color_name
+                        bug_info.pose = correct_pose_stamped
+                        bug_info.target = False
+
+                        cv2.putText(
+                            final_debug_frame,
+                            f'{color_name}',
+                            (u, v - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.5,
+                            (255, 255, 255),
+                            1,
+                        )
+
+                        # TODO: Determine Closest Target Bug Logic can be improved
+                        if color_name == self.target_color and gripper_pos_base:
+                            dx = pose_base.position.x - gripper_pos_base.x
+                            dy = pose_base.position.y - gripper_pos_base.y
+                            dist = dx**2 + dy**2
+
+                            if dist < closest_dist:
+                                closest_dist = dist
+                                target_bug_index = len(all_detected_bugs)
+
+                        all_detected_bugs.append(bug_info)
+
+                # 4. Mark Target Bug
+                if target_bug_index != -1:
+                    all_detected_bugs[target_bug_index].target = True
+                    cv2.putText(
+                        final_debug_frame,
+                        f'TARGET: {self.target_color}',
+                        (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1,
+                        (0, 255, 0),
+                        2,
+                    )
+
+                bug_array.bugs = all_detected_bugs
+                self.bug_array_pub.publish(bug_array)
+                self.sky_debug_pub.publish(
+                    self.bridge.cv2_to_imgmsg(final_debug_frame, encoding='bgr8')
                 )
 
-                # TODO: Determine Closest Target Bug Logic can be improved
-                if color_name == self.target_color and gripper_pos_base:
-                    dx = pose_base.position.x - gripper_pos_base.x
-                    dy = pose_base.position.y - gripper_pos_base.y
-                    dist = dx**2 + dy**2
-
-                    if dist < closest_dist:
-                        closest_dist = dist
-                        target_bug_index = len(all_detected_bugs)
-
-                all_detected_bugs.append(bug_info)
-
-        # 4. Mark Target Bug
-        if target_bug_index != -1:
-            all_detected_bugs[target_bug_index].target = True
-            cv2.putText(
-                final_debug_frame,
-                f'TARGET: {self.target_color}',
-                (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                (0, 255, 0),
-                2,
-            )
-
-        bug_array.bugs = all_detected_bugs
-        self.bug_array_pub.publish(bug_array)
-        self.sky_debug_pub.publish(self.bridge.cv2_to_imgmsg(final_debug_frame, encoding='bgr8'))
-
-        if mask is not None:
-            self.sky_mask_pub.publish(self.bridge.cv2_to_imgmsg(mask, encoding='mono8'))
+                if mask is not None:
+                    self.sky_mask_pub.publish(self.bridge.cv2_to_imgmsg(mask, encoding='mono8'))
 
     def wrist_image_cb(self, msg):
         """

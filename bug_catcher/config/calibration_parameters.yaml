@@ -6,6 +6,10 @@
     gripper_frame: fer_hand_tcp
     color_path: calibrated_colors.yaml
 
+    # Set the Drop pad calibration range:
+    pad_start: 5
+    pad_end: 10
+
     # Calibration parameters in meters (m)
     calibration:
       tags:
