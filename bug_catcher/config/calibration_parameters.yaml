@@ -14,19 +14,19 @@
     calibration:
       tags:
         tag_1:
-          x: -0.1143
-          y: 0.4572
-        tag_2:
           x: 0.76835
           y: 0.4475
-        tag_3:
+        tag_2:
           x: 0.76835
+          y: -0.5207
+        tag_3:
+          x: -0.1143
           y: -0.5207
         tag_4:
           x: -0.1143
-          y: -0.5207
+          y: 0.4572
+
     # Set the location of color switching block:
-    color_switch:
-      x: 0.76835
-      y: 0.00000
-      z: 0.1524
+    color_switch_x: 0.65
+    color_switch_y: -0.0127
+    color_switch_z: 0.1524
