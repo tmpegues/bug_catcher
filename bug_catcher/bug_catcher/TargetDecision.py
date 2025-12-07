@@ -852,10 +852,10 @@ class TargetDecision(Node):
                 bug_array.header.stamp = msg.header.stamp
                 bug_array.header.frame_id = self.base_frame
 
-        final_debug_frame = frame.copy()
-        closest_dist = float('inf')
-        target_bug_index = -1
-        all_detected_bugs = []
+                final_debug_frame = frame.copy()
+                closest_dist = float('inf')
+                target_bug_index = -1
+                all_detected_bugs = []
 
                 # 3. Iterate colors
                 for color_name in self.vision.colors.keys():
@@ -916,22 +916,24 @@ class TargetDecision(Node):
 
                         all_detected_bugs.append(bug_info)
 
-        # 4. Mark Target Bug
-        if target_bug_index != -1:
-            all_detected_bugs[target_bug_index].target = True
-            cv2.putText(
-                final_debug_frame,
-                f'TARGET: {self.target_color}',
-                (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                (0, 255, 0),
-                2,
-            )
+                # 4. Mark Target Bug
+                if target_bug_index != -1:
+                    all_detected_bugs[target_bug_index].target = True
+                    cv2.putText(
+                        final_debug_frame,
+                        f'TARGET: {self.target_color}',
+                        (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1,
+                        (0, 255, 0),
+                        2,
+                    )
 
-        bug_array.bugs = all_detected_bugs
-        self.bug_array_pub.publish(bug_array)
-        self.sky_debug_pub.publish(self.bridge.cv2_to_imgmsg(final_debug_frame, encoding='bgr8'))
+                bug_array.bugs = all_detected_bugs
+                self.bug_array_pub.publish(bug_array)
+                self.sky_debug_pub.publish(
+                    self.bridge.cv2_to_imgmsg(final_debug_frame, encoding='bgr8')
+                )
 
                 if mask is not None:
                     self.sky_mask_pub.publish(self.bridge.cv2_to_imgmsg(mask, encoding='mono8'))
