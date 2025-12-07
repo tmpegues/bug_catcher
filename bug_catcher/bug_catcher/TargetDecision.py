@@ -110,7 +110,8 @@ class TargetDecision(Node):
         self.declare_parameter('default_color', 'blue')
         self.declare_parameter('base_frame', 'base')
         self.declare_parameter('gripper_frame', 'fer_hand_tcp')
-        self.declare_parameter('color_path', '')
+        self.declare_parameter('color_path_sky_cam', '')
+        self.declare_parameter('color_path_wrist_cam', '')
 
         # Declare tag calibration parameters:
         self.declare_parameter('calibration.tags.tag_1.x', -0.1143)
@@ -126,7 +127,8 @@ class TargetDecision(Node):
         self.target_color = self.get_parameter('default_color').value
         self.base_frame = self.get_parameter('base_frame').value
         self.gripper_frame = self.get_parameter('gripper_frame').value
-        self.color_path = self.get_parameter('color_path').value
+        self.color_path_sky_cam = self.get_parameter('color_path_sky_cam').value
+        self.color_path_wrist_cam = self.get_parameter('color_path_wrist_cam').value
         self.tag_params = {
             1: (
                 self.get_parameter('calibration.tags.tag_2.x').get_parameter_value().double_value,
