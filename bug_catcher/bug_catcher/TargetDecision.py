@@ -25,7 +25,7 @@ Subscribers
 
 Parameters
 ----------
-+ default_color (string, default='pink'): The initial color to detect upon startup.
++ default_color (string, default='blue'): The initial color to detect upon startup.
 + base_frame (string, default='base'): The robot's root frame ID.
 + gripper_frame (string, default='fer_hand_tcp'): The end-effector frame ID.
 calibration.tags.tag_<i>.x : float
@@ -106,7 +106,7 @@ class TargetDecision(Node):
         # 1. Parameters & Setup
         # ==================================
         # Declare the config parameters:
-        self.declare_parameter('default_color', 'pink')
+        self.declare_parameter('default_color', 'blue')
         self.declare_parameter('base_frame', 'base')
         self.declare_parameter('gripper_frame', 'fer_hand_tcp')
         self.declare_parameter('color_path', '')

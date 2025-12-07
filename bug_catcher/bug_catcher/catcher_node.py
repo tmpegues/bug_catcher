@@ -1,7 +1,7 @@
 """
 The script implements the 'catcher_node' within the 'bug_catcher' package.
 
-It acts as the physical execution unit. Since the 'color_detection_node' now
+It acts as the physical execution unit. Since the 'target_decision_node' now
 handles coordinate transformation (Camera -> Base), this node simply receives
 the world-frame coordinates and executes the motion plan.
 
@@ -113,7 +113,11 @@ class CatcherNode(Node):
         cb_group = MutuallyExclusiveCallbackGroup()
 
         self.bugs_in_frame_listener = self.create_subscription(
-            BugInfo, '/wrist_camera/target_bug', self.bug_callback, 10, callback_group=cb_group
+            BugInfo,
+            '/wrist_camera/target_bug',
+            self.targetbug_callback,
+            10,
+            callback_group=cb_group,
         )
 
     async def execute_catch_sequence(self):
@@ -161,6 +165,49 @@ class CatcherNode(Node):
             return
 
         self.get_logger().info('SUCCESS: Bug Caught!')
+
+    async def targetbug_callback(self, msg):
+        """
+        Handle incoming target bug from the Wrist Camera.
+
+        Args:
+        ----
+        msg (bug_catcher_interfaces.msg.BugInfo): The target bug info.
+
+        """
+        # Prevent re-entry if the robot is already moving
+        if self.is_busy:
+            return
+
+        # Valid check for BugInfo (it's a single object, not a list)
+        if msg is None:
+            return
+
+        self.is_busy = True
+        self.get_logger().info('Wrist Camera lock acquired! executing catch...')
+
+        # 1. Extract Pose
+        target_pose = msg.pose.pose
+
+        # 2. Apply Z-Height Constraint
+        # Vision depth estimation can be noisy. We trust the physical measurement
+        # of the table height (parameter) more than the camera's Z estimation.
+        target_pose.position.z = self.grasp_z
+
+        self.get_logger().info(
+            f'Target Confirmed: x={target_pose.position.x:.2f}, '
+            f'y={target_pose.position.y:.2f}, z={target_pose.position.z:.2f}'
+        )
+
+        # 3. Execute Catch Sequence
+        await self.execute_catch_sequence()
+
+        # 4. Loop Control
+        if self.loop_execution:
+            self.is_busy = False
+            self.get_logger().info('Ready for next target...')
+        else:
+            self.get_logger().info('Task Complete. Idling.')
 
     def bug_callback(self, bug_msg):
         """
