@@ -37,31 +37,14 @@ class BugMover:
     # -----------------------------------------------------------------
     # Public Functions
     # -----------------------------------------------------------------
-    async def stalking_pick(self, buginfo_msg) -> bool:
+    async def stalking_pick(self, buginfo_msg, cart_only: bool = True) -> bool:
         """
         Pick up the bug by tracking its current state (no anticipation).
-
-        TMP TODO (outdated): the pose needs to be allowed to be constantly updated. It should take
-        a self.current_bug.pose or something like that that can be updated while the trajectory is
-        executing and change the end point
-        This function would benefit from using MoveIt's Servo sub-package. This will take a long
-        time for me to learn and is therefore being demoted in priority.
-
-        Ben and Pushkar recommended canceling the action if not complete and you want to change it
-            That seems pretty good to me
-
-        TMP TODO: A trajectory is just like a list of JointStates, right? Can I append a new one to
-        a trajectory that is being executed without interrupting?
-
-        I've got a plan that I'm sending to the JointTrajectory action server. While I'm still a
-        few waypoints away from the end I can start recalculating the end points. By the time I get
-        to the point I recalculated from, I'll have a new set of waypoints calculated and can swap
-        out the old ones. This is suggested by Matt and mostly matches the idea I had about
-        appending a waypoint to the trajectory that is being actively executed.
 
         Args:
         ----
         buginfo_msg (BugInfo): The BugInfo msg for the bug to be picked up
+        cart_only (bool): True will restrict the function to only use cartesian paths
 
         Returns
         -------
@@ -125,7 +108,10 @@ class BugMover:
         if type(waypoints) is not bool:
             self.last_waypoints = waypoints
             self.last_traj = await self.node.mpi.interruptable_pose_traj(
-                waypoints, first_traj_point=start_traj_point, cart_only=True, user_speed=user_speed
+                waypoints,
+                first_traj_point=start_traj_point,
+                cart_only=cart_only,
+                user_speed=user_speed,
             )
 
         return success

@@ -242,7 +242,7 @@ class MotionPlanningInterface:
         return True
 
     async def interruptable_pose_traj(
-        self, poses, first_traj_point=None, cart_only: bool = False, user_speed: float = 0.0
+        self, poses, first_traj_point=None, cart_only: bool = True, user_speed: float = 0.0
     ):
         """
         Go to a pose by checking if Cartesian is valid and, if Cartesian is invalid, checking RRT.

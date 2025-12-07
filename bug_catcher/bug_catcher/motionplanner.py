@@ -452,6 +452,9 @@ class MotionPlanner:
             constraints.orientation_constraints.append(oc)
 
         request.goal_constraints.append(constraints)
+        request.max_acceleration_scaling_factor = 0.1
+        request.max_velocity_scaling_factor = 0.1
+        request.max_cartesian_speed = 0.05
 
         ##################### Begin_Citation [4] ################## # noqa: E26
         # This constraint prevents the "joint out of limits" ERROR
@@ -460,8 +463,8 @@ class MotionPlanner:
         safe_limit_upper = 1.542127
         jc = JointConstraint()
         jc.joint_name = 'fer_joint7'
-        jc.position = (safe_limit_upper + safe_limit_lower) / 2.0
-        jc.tolerance_above = (safe_limit_upper - safe_limit_lower) / 2.0
+        jc.position = (safe_limit_upper + safe_limit_lower) / 2.0  # 0
+        jc.tolerance_above = (safe_limit_upper - safe_limit_lower) / 2.0  #
         jc.tolerance_below = (safe_limit_upper - safe_limit_lower) / 2.0
         jc.weight = 1.0
 
@@ -541,6 +544,23 @@ class MotionPlanner:
         request.waypoints = waypoints
         request.avoid_collisions = True
         request.max_step = 0.05
+
+        ##################### Begin_Citation [4] ################## # noqa: E26
+        # This constraint prevents the "joint out of limits" ERROR
+        # from ros2_control by enforcing it during planning.
+        safe_limit_lower = -1.542127
+        safe_limit_upper = 1.542127
+        jc = JointConstraint()
+        jc.joint_name = 'fer_joint7'
+        jc.position = (safe_limit_upper + safe_limit_lower) / 2.0  # 0
+        jc.tolerance_above = (safe_limit_upper - safe_limit_lower) / 2.0  #
+        jc.tolerance_below = (safe_limit_upper - safe_limit_lower) / 2.0
+        jc.weight = 1.0
+
+        path_constraints = Constraints()
+        path_constraints.joint_constraints.append(jc)
+        request.path_constraints = path_constraints
+        ##################### End_Citation [4] #################### # noqa: E26
 
         if user_speed == 0.0:
             request.max_acceleration_scaling_factor = 0.1
