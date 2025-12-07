@@ -123,6 +123,10 @@ class TargetDecision(Node):
         self.declare_parameter('calibration.tags.tag_3.y', 0.4064)
         self.declare_parameter('calibration.tags.tag_4.x', 0.6858)
         self.declare_parameter('calibration.tags.tag_4.y', -0.4572)
+        # Set the color switch location (w.r.t base):
+        self.declare_parameter('color_switch.x', 0.76835)
+        self.declare_parameter('color_switch.x', 0.00000)
+        self.declare_parameter('color_switch.x', 0.1524)
 
         # Set the tag and config parameter values:
         self.target_color = self.get_parameter('default_color').value
@@ -149,6 +153,11 @@ class TargetDecision(Node):
                 self.get_parameter('calibration.tags.tag_1.y').get_parameter_value().double_value,
             ),
         }
+        self.color_switch_param = (
+            self.get_parameter('color_switch.x').get_parameter_value().double_value,
+            self.get_parameter('color_switch.y').get_parameter_value().double_value,
+            self.get_parameter('color_switch.z').get_parameter_value().double_value,
+        )
 
         # TF Buffer
         self.tf_buffer = Buffer()
@@ -169,6 +178,8 @@ class TargetDecision(Node):
         self.bug_array_pub = self.create_publisher(BugArray, '/bug_god/bug_array', 10)
         self.sky_debug_pub = self.create_publisher(Image, '/bug_god/debug_view', 10)
         self.sky_mask_pub = self.create_publisher(Image, '/bug_god/mask_view', 10)
+        self.target_switch_pub = self.create_publisher(String, '/target_color', 10)
+        self.switch_debug_pub = self.create_publisher(Image, '/bug_god/switch_view', 10)
 
         # ==================================
         # 3. Wrist Cam Setup
@@ -754,13 +765,13 @@ class TargetDecision(Node):
                     ) as e:
                         self.get_logger().info(f'Unable to find drop location for tag_{i}: {e}')
                 # Publish the locations of the drop points:
-                msg = BasePoseArray()
+                base_poses = BasePoseArray()
                 for color, pose in self.drop_locs.items():
                     pair = BasePose()
                     pair.color = color
                     pair.pose = pose
-                    msg.entries.append(pair)
-                self.drop_pub.publish(msg)
+                    base_poses.entries.append(pair)
+                self.drop_pub.publish(base_poses)
                 # Switch to the Publication state:
                 self.state = State.PUBLISHING
             case State.PUBLISHING:
@@ -920,6 +931,41 @@ class TargetDecision(Node):
 
                 if mask is not None:
                     self.sky_mask_pub.publish(self.bridge.cv2_to_imgmsg(mask, encoding='mono8'))
+
+                # Create a mask of the image at the color_switch point to change the color when
+                # the block has been changed. (Pre_existing mask exists on image)
+                switch_mask = np.zeros(frame.shape[:2], dtype='uint8')
+                x = self.color_switch_param[0]
+                y = self.color_switch_param[1]
+                z = self.color_switch_param[2]
+
+                # 3D point in camera frame (meters)
+                X_L, Y_L, Z_L = x - 20, y + 20, z
+                X_R, Y_R, Z_R = x + 20, y - 20, z
+                # Left Tag location:
+                u_L = int(fx * (X_L / Z_L) + cx)
+                v_L = int(fy * (Y_L / Z_L) + cy)
+                # Right Tag Location:
+                u_R = int(fx * (X_R / Z_R) + cx)
+                v_R = int(fy * (Y_R / Z_R) + cy)
+
+                # Draw the mask to be within the tags:
+                cv2.rectangle(switch_mask, (u_L, v_L), (u_R, v_R), 255, -1)
+                frame = cv2.bitwise_and(frame, frame, mask=switch_mask)
+
+                # Loop through colors and if it returns a position, then switch the target.
+                switch_debug_frame = frame.copy()
+                for color_name in self.vision.colors.keys():
+                    detections, _, _ = self.vision.detect_objects(frame, color_name)
+                    results, final_debug_frame = self.vision.update_tracker(
+                        detections, switch_debug_frame
+                    )
+                    # If a color is detected publish that color to the topic:
+                    if detections is not None:
+                        self.target_switch_pub.publish(color_name)
+                self.switch_debug_pub.publish(
+                    self.bridge.cv2_to_imgmsg(switch_debug_frame, encoding='bgr8')
+                )
 
     def wrist_image_cb(self, msg):
         """

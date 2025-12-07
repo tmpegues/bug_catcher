@@ -25,3 +25,8 @@
         tag_4:
           x: -0.1143
           y: -0.5207
+    # Set the location of color switching block:
+    color_switch:
+      x: 0.76835
+      y: 0.00000
+      z: 0.1524
