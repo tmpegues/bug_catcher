@@ -56,6 +56,7 @@ setup(
             'pick_node = bug_catcher.pick_node:main',
             'calibration_node = bug_catcher.Calibration_TargetPublisher_April:main',
             'target_decision_node = bug_catcher.TargetDecision:main',
+            'turtle_sim_adjuster = bug_catcher.turtle_sim_adjuster:main',
         ],
     },
 )

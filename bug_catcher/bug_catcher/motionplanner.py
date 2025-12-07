@@ -11,12 +11,14 @@ It provides a unified API for:
     - Execution of planned trajectories
     - Gripper control (open/close via ExecuteTrajectory)
 """
+
 from os import path
 import xml.etree.ElementTree as ET
 
 from ament_index_python.packages import get_package_share_directory
 from bug_catcher.robotstate import RobotState
 from builtin_interfaces.msg import Duration
+from control_msgs.msg import SpeedScalingFactor
 from geometry_msgs.msg import Point, Pose, Quaternion
 from moveit_msgs.action import ExecuteTrajectory, MoveGroup
 from moveit_msgs.msg import (
@@ -27,14 +29,14 @@ from moveit_msgs.msg import (
     PositionConstraint,
     RobotTrajectory,
 )
-from moveit_msgs.msg import (RobotState as MoveItRobotState)
+from moveit_msgs.msg import RobotState as MoveItRobotState
 from moveit_msgs.srv import GetCartesianPath
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from shape_msgs.msg import SolidPrimitive
-from trajectory_msgs.msg import JointTrajectoryPoint
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 import xacro
 
 
@@ -44,11 +46,19 @@ class MotionPlanner:
 
     This class uses an injected Node instance to create its action/service clients.
     This will allow us to connect to RobotState and PlanningScene for the MotionPlanningInterface.
+
+    Subscribers:
+    ----------
+    user_pose (Pose):  For testing the direct joint control
+
+    Publishers:
+    ----------
+    /fer_arm_controller/joint_trajectory (JointTrajectory): Allows direct trajectory control,
+                                                                bypassing MoveIt
+
     """
 
-    def __init__(
-        self, node: Node, robot_state: RobotState, group_name: str, eef_link: str
-    ):
+    def __init__(self, node: Node, robot_state: RobotState, group_name: str, eef_link: str):
         """
         Initialize the MotionPlanner.
 
@@ -115,23 +125,22 @@ class MotionPlanner:
         self.logger.info('Parsing SRDF for named configurations...')
         self._group_states = {}
         try:
-            xacro_file_path = path.join(get_package_share_directory(
-                'franka_fer_moveit_config'), 'srdf', 'fer_arm.srdf.xacro')
+            xacro_file_path = path.join(
+                get_package_share_directory('franka_fer_moveit_config'),
+                'srdf',
+                'fer_arm.srdf.xacro',
+            )
             urdf = xacro.process_file(xacro_file_path).toxml()
             root = ET.fromstring(urdf)
 
-            for group_state in root.findall(
-                f".//group_state[@group='{self.group_name}']"
-            ):
+            for group_state in root.findall(f".//group_state[@group='{self.group_name}']"):
                 state_name = group_state.get('name')
                 joint_values = {}
                 for joint in group_state.findall('joint'):
                     joint_values[joint.get('name')] = float(joint.get('value'))
 
                 self._group_states[state_name] = {'joints': joint_values}
-            self.logger.info(
-                f'Successfully loaded {len(self._group_states)} named states.'
-            )
+            self.logger.info(f'Successfully loaded {len(self._group_states)} named states.')
         except (FileNotFoundError, ET.ParseError, xacro.XacroException) as e:
             self.logger.error(f'Failed to parse SRDF for group states: {e}')
 
@@ -141,28 +150,32 @@ class MotionPlanner:
         self.logger.info('Parsing SRDF for named configurations...')
         self._group_states = {}
         try:
-            xacro_file_path = path.join(get_package_share_directory(
-                'franka_fer_moveit_config'), 'srdf', 'fer_arm.srdf.xacro')
+            xacro_file_path = path.join(
+                get_package_share_directory('franka_fer_moveit_config'),
+                'srdf',
+                'fer_arm.srdf.xacro',
+            )
             urdf = xacro.process_file(xacro_file_path).toxml()
             root = ET.fromstring(urdf)
 
-            for group_state in root.findall(
-                f".//group_state[@group='{self.group_name}']"
-            ):
+            for group_state in root.findall(f".//group_state[@group='{self.group_name}']"):
                 state_name = group_state.get('name')
                 joint_values = {}
                 for joint in group_state.findall('joint'):
                     joint_values[joint.get('name')] = float(joint.get('value'))
 
                 self._group_states[state_name] = {'joints': joint_values}
-            self.logger.info(
-                f'Successfully loaded {len(self._group_states)} named states.'
-            )
+            self.logger.info(f'Successfully loaded {len(self._group_states)} named states.')
         except (FileNotFoundError, ET.ParseError, xacro.XacroException) as e:
             self.logger.error(f'Failed to parse SRDF for group states: {e}')
 
         self.last_plan = None  # To store and inspect the last plan
         self.logger.info('MotionPlanner initialized successfully!')
+
+        self.traj_sub = self.node.create_subscription(Pose, 'user_pose', self.user_traj_cb, 10)
+        self.direct_traj_pub = self.node.create_publisher(
+            JointTrajectory, '/fer_arm_controller/joint_trajectory', 10
+        )
 
     # -----------------------------------------------------------------
     # Internal Helper Functions
@@ -273,9 +286,7 @@ class MotionPlanner:
         # Get the robot's CURRENT gripper positions
         current_joint_state_msg = self.robot_state.get_angles()
         if current_joint_state_msg is None:
-            self.logger.error(
-                'Cannot set gripper state: RobotState is not yet available.'
-            )
+            self.logger.error('Cannot set gripper state: RobotState is not yet available.')
             return False
 
         # #################### Begin_Citation [7] ##################
@@ -285,9 +296,7 @@ class MotionPlanner:
                 idx = current_joint_state_msg.name.index(joint_name)
                 current_gripper_positions.append(current_joint_state_msg.position[idx])
         except ValueError as e:
-            self.logger.error(
-                f'Cannot set gripper state: Joint {e} not found in RobotState.'
-            )
+            self.logger.error(f'Cannot set gripper state: Joint {e} not found in RobotState.')
             return False
         # #################### End_Citation [7] ###################
 
@@ -313,9 +322,7 @@ class MotionPlanner:
         goal_msg = ExecuteTrajectory.Goal()
         goal_msg.trajectory = traj
 
-        self.logger.info(
-            f'Sending gripper command: {self.gripper_joint_names} -> {positions}'
-        )
+        self.logger.info(f'Sending gripper command: {self.gripper_joint_names} -> {positions}')
 
         # Send the goal
         goal_handle = await self.execute_traj_client.send_goal_async(goal_msg)
@@ -405,14 +412,10 @@ class MotionPlanner:
 
         """
         if goal_position is None and goal_orientation is None:
-            self.logger.error(
-                'Must provide at least goal_position or goal_orientation.'
-            )
+            self.logger.error('Must provide at least goal_position or goal_orientation.')
             return False, None
 
-        self.logger.info(
-            f'Planning to pose (Pos: {goal_position}, Orient: {goal_orientation})'
-        )
+        self.logger.info(f'Planning to pose (Pos: {goal_position}, Orient: {goal_orientation})')
         request = self._create_motion_plan_request(start_config)
 
         frame_id = 'base'
@@ -471,13 +474,9 @@ class MotionPlanner:
 
     async def plan_to_position_only(self, goal_position: Point, start_config=None):
         """[Shortcut] Plan to a target end-effector position."""
-        return await self.plan_to_pose(
-            goal_position=goal_position, start_config=start_config
-        )
+        return await self.plan_to_pose(goal_position=goal_position, start_config=start_config)
 
-    async def plan_to_orientation_only(
-        self, goal_orientation: Quaternion, start_config=None
-    ):
+    async def plan_to_orientation_only(self, goal_orientation: Quaternion, start_config=None):
         """[Shortcut] Plan to a target end-effector orientation."""
         return await self.plan_to_pose(
             goal_orientation=goal_orientation, start_config=start_config
@@ -485,29 +484,29 @@ class MotionPlanner:
 
     async def plan_to_named_config(self, config_name: str, start_config=None):
         """Plan to a named configuration [Requirement 6]."""
-        self.logger.info(
-            f"Planning to SRDF-loaded named config: '{config_name}'"
-        )
+        self.logger.info(f"Planning to SRDF-loaded named config: '{config_name}'")
 
         if config_name not in self._group_states:
-            self.logger.error(f"Named config '{config_name}' not found "
-                              f'in internal _group_states dictionary.')
+            self.logger.error(
+                f"Named config '{config_name}' not found in internal _group_states dictionary."
+            )
             return False, None
 
         goal_config_dict = self._group_states[config_name]['joints']
 
         try:
-            goal_config_list = [
-                goal_config_dict[joint] for joint in self.joint_names
-            ]
+            goal_config_list = [goal_config_dict[joint] for joint in self.joint_names]
         except KeyError as e:
-            self.logger.error(f"Named config '{config_name}' is missing "
-                              f"joint '{e}'. Cannot proceed.")
+            self.logger.error(
+                f"Named config '{config_name}' is missing joint '{e}'. Cannot proceed."
+            )
             return False, None
 
         return await self.plan_to_joint_config(goal_config_list, start_config)
 
-    async def plan_cartesian_path(self, waypoints: list, start_config: list = None):
+    async def plan_cartesian_path(
+        self, waypoints: list, start_config: list = None, user_speed: float = 0.0
+    ):
         """
         Plan a Cartesian (straight-line) path [Requirement 5].
 
@@ -516,6 +515,7 @@ class MotionPlanner:
             waypoints (list of Pose): A list of one or more target poses.
             start_config (list, optional): Starting joint angles.
                                            If None, use current position.
+            user_speed (float): !=0 will disable the default speed scaling on the trajectory.
 
         Returns
         -------
@@ -539,9 +539,17 @@ class MotionPlanner:
         request.group_name = self.group_name
         request.link_name = self.eef_link
         request.waypoints = waypoints
-        request.max_step = 0.1
-        request.max_acceleration_scaling_factor = 0.1
         request.avoid_collisions = True
+        request.max_step = 0.05
+
+        if user_speed == 0.0:
+            request.max_acceleration_scaling_factor = 0.1
+            request.max_velocity_scaling_factor = 0.1
+            request.max_cartesian_speed = 0.05
+        else:
+            request.max_acceleration_scaling_factor = 0.1
+            request.max_velocity_scaling_factor = user_speed
+            request.max_cartesian_speed = 0.05
 
         future = self.cartesian_client.call_async(request)
         response = await future
@@ -590,13 +598,14 @@ class MotionPlanner:
         positions = [width, width]
         return await self._set_gripper_state(positions)
 
-    async def close_gripper(self, width: float = 0.005):
+    async def close_gripper(self, width: float = 0.005, time=1):
         """
         Commands the gripper to move to a "close" position.
 
         Args:
         ----
             width (float): Target width (e.g., 0.005 for 0.5cm).
+           time (float): how long you want closing the gripper to take
 
         Returns
         -------
@@ -605,7 +614,7 @@ class MotionPlanner:
         """
         self.logger.info(f"Sending 'close' command (width: {width}m)...")
         positions = [width, width]
-        return await self._set_gripper_state(positions)
+        return await self._set_gripper_state(positions, time_from_start_sec=time)
 
     # -----------------------------------------------------------------
     # Execution Plan
@@ -644,9 +653,7 @@ class MotionPlanner:
             return False
 
         if not goal_handle.accepted:
-            self.logger.error(
-                'Execution goal was rejected by /execute_trajectory server.'
-            )
+            self.logger.error('Execution goal was rejected by /execute_trajectory server.')
             return False
 
         self.logger.info('Execution goal accepted, awaiting result...')
@@ -663,3 +670,50 @@ class MotionPlanner:
                 f'Error Code: {result_response.result.error_code.val}'
             )
             return False
+
+    def send_direct_traj(self, traj_msg, user_speed: float = 0.0):
+        """
+        Directly send a trajectory, bypassing MoveIt.
+
+        Args:
+        ----
+        traj_msg (JointTrajectory): The trajectory you'd like to execute
+        user_speed (float): !=0 will allow the user to set their own speed scale to the controller
+
+        """
+        if user_speed > 0.0:
+            self.direct_speed_pub.publish(SpeedScalingFactor(factor=user_speed))
+
+        self.direct_traj_pub.publish(traj_msg)
+
+    async def user_traj_cb(self, pose_msg: Pose):
+        """
+        Allow a user to immediately (pending planning) send a trajectory to a Pose.
+
+        Args:
+        ----
+        pose_msg (Pose): The Poses you'd like to send the robot to
+
+        Returns
+        -------
+        plan.joint_trajectory (JointTrajectory): The trajectory published to the controller
+
+        """
+        self.node.get_logger().info('user request received')
+        success = False
+        cart_only = False
+        # 1: check cartesian
+        success, plan = await self.plan_cartesian_path(waypoints=[pose_msg])
+        # 2: if Cartesian failed and cart_only isn't set, check RRT
+        if cart_only and (not success or plan is None):
+            self.node.get_logger().warn('Plan failed at stage: Cartesian. Not Attempting RRT.')
+            return False
+        elif not success or plan is None:
+            self.node.get_logger().warn('Plan failed at stage: Cartesian. Attempting RRT.')
+            success, plan = await self.plan_to_pose(pose_msg.position, pose_msg.orientation)
+            if not success or plan is None:
+                self.node.get_logger().warn('Pre-grasp failed both Cartesian and RRT path.')
+                return False
+        # 3: If we get to this point, then we have a plan. Execute it.
+        if success:
+            self.send_direct_traj(plan.joint_trajectory)

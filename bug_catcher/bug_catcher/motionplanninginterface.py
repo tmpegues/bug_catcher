@@ -204,10 +204,11 @@ class MotionPlanningInterface:
 
         return True
 
-    # Go to a pose by checking if Cartesian is valid and checking RRT if Cartesian is invalid
     async def GoTo(self, pose: Pose, cart_only: bool = False) -> bool:
         """
         Go to a pose by checking if Cartesian is valid and checking RRT if Cartesian is invalid.
+
+        This function uses MoveIt's ExecuteTrajectory, and (as written) cannot be interrupted.
 
         Args:
         ----
@@ -240,9 +241,59 @@ class MotionPlanningInterface:
 
         return True
 
-    async def GripBug(self):
+    async def interruptable_pose_traj(
+        self, poses, first_traj_point=None, cart_only: bool = False, user_speed: float = 0.0
+    ):
+        """
+        Go to a pose by checking if Cartesian is valid and, if Cartesian is invalid, checking RRT.
+
+        This function directly sends the trajectory to the fer_arm_controller, and can therefore
+        interrupt an in progress execution if this function was used to send the first trajectory.
+
+        Args:
+        ----
+        poses ([Pose]): the target waypoint poses to plan and execute to. RRT uses the last Pose.
+        first_traj_point : When interrupting an execution, you should provide a trajectory point
+                            on the trajectory being executed so that the motion is smooth
+        cart_only (bool): True if you only want to allow cartesian paths.
+        user_speed (float): != 0 will turn off speed scaling in the trajectory generation. The
+                            provided value will be used as the speed scaling factor.
+
+        """
+        self.node.get_logger().debug(f'{poses} TMP (mpi), user request received: ')
+        success = False
+
+        # 1: check cartesian
+
+        success, plan = await self.mp.plan_cartesian_path(waypoints=poses, user_speed=user_speed)
+        self.node.get_logger().info(f'Stalking: {success}, {cart_only}')
+        # 2: if Cartesian failed and cart_only isn't set, check RRT
+        if cart_only and (not success or plan is None):
+            self.node.get_logger().warn('Plan failed at stage: Cartesian. Not Attempting RRT.')
+            return False
+        elif not success or plan is None:
+            self.node.get_logger().warn('Plan failed at stage: Cartesian. Attempting RRT.')
+            success, plan = await self.mp.plan_to_pose(poses[-1].position, poses[-1].orientation)
+            if not success or plan is None:
+                self.node.get_logger().warn('Pre-grasp failed both Cartesian and RRT path.')
+                return False
+        # 3: If we get to this point, then we have a plan. Execute it.
+        if success:
+            if first_traj_point:
+                self.node.get_logger().info(f'traj_point {first_traj_point}')
+                calc_first_point = first_traj_point
+                calc_first_point.time_from_start = plan.joint_trajectory.points[0].time_from_start
+                plan.joint_trajectory.points[0] = first_traj_point
+            self.mp.send_direct_traj(plan.joint_trajectory)
+            return plan.joint_trajectory
+
+    async def GripBug(self, time=1):
         """
         Close the gripper on a bug.
+
+        Args:
+        ----
+        time (float): how long you want closing the gripper to take
 
         Returns
         -------
@@ -251,7 +302,7 @@ class MotionPlanningInterface:
         """
         # I think we should set both a positon and an effort, or just an effort
         # width = 0.005 is the default value we set, but 1 cm seems resonable for the Hexbug size
-        gripper = await self.mp.close_gripper(width=0.005)
+        gripper = await self.mp.close_gripper(width=0.005, time=time)
         if not gripper:
             self.node.get_logger().warn('Gripper failed at stage: GripBug')
             return False

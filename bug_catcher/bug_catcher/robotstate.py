@@ -129,9 +129,16 @@ class RobotState:
         if self.current_joint_states is not None:
             return self.current_joint_states
 
-    def get_ee_pose(self, want_stamp: bool = False) -> (bool and Pose) | PoseStamped:
+    def get_ee_pose(self, frame: str | None = None, want_stamp: bool = False):
         """
         Get the robot's current ee pose by listening to the tf.
+
+        Args
+        ----
+        frame (str): the frame that you want to get the pose of. Defaults to fer_hand_tcp, but any
+            other valid frame will work
+
+        want_stamp (bool): True if you want to return a PoseStamped, False if you want a Pose.
 
         Returns
         -------
@@ -140,8 +147,10 @@ class RobotState:
 
         """
         time = rclpy.time.Time()
+        if frame is None:
+            frame = self.eef_link
         try:
-            ee_tf = self.tf_buffer.lookup_transform(self.base_frame, self.eef_link, time).transform
+            ee_tf = self.tf_buffer.lookup_transform(self.base_frame, frame, time).transform
             self.user_node.get_logger().debug(f'ee_tf: {ee_tf}')
             self.ee_pose.position = ee_tf.translation
             self.ee_pose.orientation = ee_tf.rotation

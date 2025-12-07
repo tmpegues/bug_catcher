@@ -4,9 +4,7 @@ import asyncio
 
 from bug_catcher import bug as bug
 from bug_catcher import mover_funcs as mv
-from bug_catcher import mover_funcs as mv
 
-from geometry_msgs.msg import Pose
 from geometry_msgs.msg import Pose
 
 import numpy as np
@@ -27,133 +25,21 @@ class BugMover:
 
         self.cb_group_1 = MutuallyExclusiveCallbackGroup()
 
+        self.last_traj = False
+        self.last_waypoints = False  # Save the last trajectory so that we can start interruption
+        # paths with the end of the existing path
+
         self.node.get_logger().debug('BugCatcher initialization complete')
-
-    # # -----------------------------------------------------------------
-    # # Internal Helper Functions
-    # # -----------------------------------------------------------------
-    # def _calc_distance(self, p1: Point | Pose, p2: Point | Pose):
-    #     """
-    #     Calculate the Euclidean distance between two points or poses.
-    # # -----------------------------------------------------------------
-    # # Internal Helper Functions
-    # # -----------------------------------------------------------------
-    # def _calc_distance(self, p1: Point | Pose, p2: Point | Pose):
-    #     """
-    #     Calculate the Euclidean distance between two points or poses.
-
-    #     Args:
-    #     ----
-    #     p1 (Point | Pose): the initial position to calculate distance from
-    #     p2 (Point | Pose): the final position to calculate distance to
-    #     Args:
-    #     ----
-    #     p1 (Point | Pose): the initial position to calculate distance from
-    #     p2 (Point | Pose): the final position to calculate distance to
-
-    #     Returns
-    #     -------
-    #     (float) the Euclidian distance between the Points or Poses
-    #     Returns
-    #     -------
-    #     (float) the Euclidian distance between the Points or Poses
-
-    #     """
-    #     if type(p1) is Pose:
-    #         p1 = p1.position
-    #     if type(p2) is Pose:
-    #         p2 = p2.position
-    #     return math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2 + (p1.z - p2.z) ** 2)
-    #     """
-    #     if type(p1) is Pose:
-    #         p1 = p1.position
-    #     if type(p2) is Pose:
-    #         p2 = p2.position
-    #     return math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2 + (p1.z - p2.z) ** 2)
-
-    # def _calc_travel_time(self, start_pose: Pose, end_pose: Pose) -> float:
-    #     """Calculate the estimated travel time needed for robot to move from start to end."""
-    #     distance = self._calc_distance(start_pose.position, end_pose.position)
-    # def _calc_travel_time(self, start_pose: Pose, end_pose: Pose) -> float:
-    #     """Calculate the estimated travel time needed for robot to move from start to end."""
-    #     distance = self._calc_distance(start_pose.position, end_pose.position)
-
-    #     ROBOT_SPEED = 0.1  # TODO: Update with actual robot speed
-    #     OVERHEAD_TIME = 1.0  # TODO: Update with actual overhead time
-    #     ROBOT_SPEED = 0.1  # TODO: Update with actual robot speed
-    #     OVERHEAD_TIME = 1.0  # TODO: Update with actual overhead time
-
-    #     travel_time = distance / ROBOT_SPEED + OVERHEAD_TIME
-    #     return travel_time
-    #     travel_time = distance / ROBOT_SPEED + OVERHEAD_TIME
-    #     return travel_time
-
-    # def _distance_scaler(self, p2: Pose, p1: Pose, max_step: float = 0.1):
-    #     """
-    #     Calculate the Pose that is the specified distance from p1 to p2.
-
-    #     The orientation is not calculated, it's taken directly from p2.
-    #     The orientation is not calculated, it's taken directly from p2.
-
-    #     Args:
-    #     p2 (Pose): The pose you want to step towards.
-    #     p1 (Pose): The pose you want to step from. Defaults to current ee_pose
-    #     max_step (float): Maximum step size (in meters) to take from p1 to p2. Defaults to 0.1 m.
-    #     Args:
-    #     p2 (Pose): The pose you want to step towards.
-    #     p1 (Pose): The pose you want to step from. Defaults to current ee_pose
-    #     max_step (float): Maximum step size (in meters) to take from p1 to p2. Defaults to 0.1 m.
-
-    #     Returns
-    #     -------
-    #     step_pose (Pose): The pose that's a single step from p1 to p2, with the orientation of p2
-    #     Returns
-    #     -------
-    #     step_pose (Pose): The pose that's a single step from p1 to p2, with the orientation of p2
-
-    #     """
-    #     if type(p1) is None:
-    #         p1 = self.node.mpi.rs.get_ee_pose(want_stamp=True).pose
-    #     """
-    #     if type(p1) is None:
-    #         p1 = self.node.mpi.rs.get_ee_pose(want_stamp=True).pose
-
-    #     # Check distance and scale the step if dist > max_step
-    #     dist_to_bug = self._calc_distance(bug.pose.pose, self.node.mpi.rs.get_ee_pose())
-    #     if dist_to_bug <= max_step:
-    #         step_pose = p2  # TMP TODO: Check how to copy the pose
-    #     else:
-    #         scale_factor = dist_to_bug / max_step
-    #         step_pose = Pose(orientation=p2.orientation)
-    #         p1_vec = [p1.position.x, p1.position.y, p1.position.z]
-    #         p2_vec = [p2.position.x, p2.position.y, p2.position.z]
-    #         step_vec = [scale_factor * (x2 - x1) for x1, x2 in zip(p1_vec, p2_vec)]
-    #         step_point = Point(x=step_vec[0], y=step_vec[1], z=step_vec[2])
-    #         step_pose.position = step_point
-    #     return step_pose
-    #     # Check distance and scale the step if dist > max_step
-    #     dist_to_bug = self._calc_distance(bug.pose.pose, self.node.mpi.rs.get_ee_pose())
-    #     if dist_to_bug <= max_step:
-    #         step_pose = p2  # TMP TODO: Check how to copy the pose
-    #     else:
-    #         scale_factor = dist_to_bug / max_step
-    #         step_pose = Pose(orientation=p2.orientation)
-    #         p1_vec = [p1.position.x, p1.position.y, p1.position.z]
-    #         p2_vec = [p2.position.x, p2.position.y, p2.position.z]
-    #         step_vec = [scale_factor * (x2 - x1) for x1, x2 in zip(p1_vec, p2_vec)]
-    #         step_point = Point(x=step_vec[0], y=step_vec[1], z=step_vec[2])
-    #         step_pose.position = step_point
-    #     return step_pose
 
     # -----------------------------------------------------------------
     # Public Functions
     # -----------------------------------------------------------------
-    async def stalking_pick(self, bug: bug.Bug, wrist_cam: bool = False) -> bool:
+    async def stalking_pick(self, buginfo_msg) -> bool:
         """
         Pick up the bug by tracking its current state (no anticipation).
 
-        TMP TODO: the pose needs to be allowed to be constantly updated. It should take a
-        self.current_bug.pose or something like that that can be updated while the trajectory is
+        TMP TODO (outdated): the pose needs to be allowed to be constantly updated. It should take
+        a self.current_bug.pose or something like that that can be updated while the trajectory is
         executing and change the end point
         This function would benefit from using MoveIt's Servo sub-package. This will take a long
         time for me to learn and is therefore being demoted in priority.
@@ -161,68 +47,111 @@ class BugMover:
         Ben and Pushkar recommended canceling the action if not complete and you want to change it
             That seems pretty good to me
 
+        TMP TODO: A trajectory is just like a list of JointStates, right? Can I append a new one to
+        a trajectory that is being executed without interrupting?
+
+        I've got a plan that I'm sending to the JointTrajectory action server. While I'm still a
+        few waypoints away from the end I can start recalculating the end points. By the time I get
+        to the point I recalculated from, I'll have a new set of waypoints calculated and can swap
+        out the old ones. This is suggested by Matt and mostly matches the idea I had about
+        appending a waypoint to the trajectory that is being actively executed.
+
         Args:
         ----
-        bug (bug.Bug): The bug to stalk and pick up
-        wrist_cam (bool): True if a wrist camera is available and can be used for timing the grasp
+        buginfo_msg (BugInfo): The BugInfo msg for the bug to be picked up
 
         Returns
         -------
-        success (bool): True if the robot gripper thinks it grasped an object
+        success (bool): True if  gripper successfully closed (False might mean we're still moving)
 
         """
-        # started_tracking = False
-        # pounce = False
-        # # 1. Get trajectory to the bug
-        # bug_pose = Pose()  # TODO: update this pose
-        # # TODO: This tracker should either ignore the fingers or directly set them every loop
-        # tracking = self.node.mpi.GoTo(bug_pose)
+        user_speed = 1.0
 
-        # if not tracking:
-        #     # Retry once or twice or something like that?
-        #     started_tracking = False
-        #     pass
-        # else:
-        #     # wait half a second and make sure tracking is is good the whole time
-        #     if not started_tracking:
-        #         start_time = self.node.get_clock().now()
-        #         started_tracking = True
-        #     # Track for 0.5 seconds, then flip the switch to pounce
-        #     if self.node.get_clock().now() - start_time >= Duration(nanosec=5 * 10**8):
-        #         pounce = True
-        #         pass
-        #     if pounce:
-        #         success = self.node.mpi.CloseGripper
-        #         # TMP TODO: break the continuous tracking
+        ee_frame = 'fer_hand_tcp'
+        self.node.get_logger().debug(f'{buginfo_msg.pose.pose.position} TMP (bm) bug pose: ')
+        self.node.get_logger().debug(
+            f'{self.node.mpi.rs.get_ee_pose(frame=ee_frame)[1].position} TMP (bm) current pose: '
+        )
+        dist_to_bug = mv._calc_distance(
+            buginfo_msg.pose.pose,
+            self.node.mpi.rs.get_ee_pose(frame=ee_frame)[1],  # TMP TODO: update frame
+        )
+        success = False
+        self.node.get_logger().info(f'Stalking: {dist_to_bug}')
+        # While far from the bug, keep moving and do not close the gripper
+        if dist_to_bug > 0.10:  # Raise the goal pose if far from the bug
+            self.node.get_logger().info('Stalking: Big')
+            goal_pose = Pose(orientation=buginfo_msg.pose.pose.orientation)
+            goal_pose.position.x = buginfo_msg.pose.pose.position.x
+            goal_pose.position.y = buginfo_msg.pose.pose.position.y
+            goal_pose.position.z = buginfo_msg.pose.pose.position.z + 0.05
+        elif dist_to_bug > 0.01:  # If close, lower the gripper
+            self.node.get_logger().info('Stalking: Mid')
+            goal_pose = Pose(orientation=buginfo_msg.pose.pose.orientation)
+            goal_pose.position = buginfo_msg.pose.pose.position
+        elif dist_to_bug < 0.01:  # If really close, close the gripper
+            self.node.get_logger().info('Stalking: Small')
+            return await self.node.mpi.GripBug()
 
-        # return success
+        self.node.get_logger().info(f'Stalking: goal {goal_pose.position.z}')
+        self.node.get_logger().info(f'Stalking: bug {buginfo_msg.pose.pose.position.z}')
 
-        # While more than 1 cm away, keep moving towards the bug
-        dist_to_bug = mv._calc_distance(bug.pose.pose, self.node.mpi.rs.get_ee_pose())
-        dist_to_bug = mv._calc_distance(bug.pose.pose, self.node.mpi.rs.get_ee_pose())
-        success = True
-        if not wrist_cam:
-            while dist_to_bug >= 0.01 and success is True:
-                step_pose = mv._distance_scaler(
-                    p1=self.node.mpi.rs.get_ee_pose(), p2=bug.pose.pose
-                )
-                success = self.node.mpi.GoTo(step_pose, cart_only=True)
-        # TMP TODO: Add section for checking wrist camera
-        elif wrist_cam:
-            while dist_to_bug >= 0.01 and success is True:
-                step_pose = mv._distance_scaler(
-                    p1=self.node.mpi.rs.get_ee_pose(), p2=bug.pose.pose
-                )
-                success = self.node.mpi.GoTo(step_pose, cart_only=True)
-                # TMP TODO: Once we incorporate a wrist cam, figure out how to spcifically check
-                # images from it instead of Bug God
-
-        if success is False:
-            self.node.get_logger().info('Stalking pick has failed')
+        if type(self.last_waypoints) is bool:
+            start_pose = self.node.mpi.rs.get_ee_pose(frame=ee_frame)[1]
+            start_traj_point = None
         else:
-            success = self.node.mpi.CloseGripper()
+            start_pose = self.last_waypoints[-2]
+
+        if type(self.last_traj) is not bool:
+            start_traj_point = self.last_traj.points[-2]
+            # start_traj_point = None
+            # Start current trajectory from 2nd last waypoint
+            # that's being executed
+        else:
+            start_traj_point = None
+
+        # Generate a Pose path of some number of waypoints
+        waypoints = mv.waypoint_maker(start_pose, goal_pose, steps=15)
+
+        # Scale speed by distance if user_speed is True
+        if user_speed == 1.0:
+            user_speed = max(dist_to_bug, 0.07)
+
+        if type(waypoints) is not bool:
+            self.last_waypoints = waypoints
+            self.last_traj = await self.node.mpi.interruptable_pose_traj(
+                waypoints, first_traj_point=start_traj_point, cart_only=True, user_speed=user_speed
+            )
 
         return success
+
+        # While more than 1 cm away, keep moving towards the bug
+        # Right here, I'm doing discrete 10 cm steps towards the bug until we get close enough.
+        #  That should work, as long as the arm is faster than the bug, right?
+
+        # dist_to_bug = mv._calc_distance(
+        #     bug.pose.pose,
+        #     self.node.mpi.rs.get_ee_pose(frame=ee_frame),  # TMP TODO: update frame
+        # )
+        # success = True
+
+        # while dist_to_bug >= 0.01 and success is True:
+        #     step_pose = mv._distance_scaler(p1=self.node.mpi.rs.get_ee_pose(), p2=bug.pose.pose)
+        #     # While the ee pose is more than 3 cm away from the x,y coordinates of the bug,
+        #     # follow with the ee raised by 5 cm
+        #     if np.linalg.norm([step_pose.position.x, step_pose.position.y]) >= 0.05:
+        #         step_pose.position.z += 0.05  # lift by 5 cm
+        #     success = await self.node.mpi.GoTo(step_pose, cart_only=True)
+
+        #     dist_to_bug = mv._calc_distance(
+        #         bug.pose.pose, self.node.mpi.rs.get_ee_pose(frame=ee_frame)
+        #     )
+        # if success is False:
+        #     self.node.get_logger().info('Stalking pick has failed')
+        # else:
+        #     success = self.node.mpi.CloseGripper()
+
+        # return success
 
     async def ambushing_pick(self, bridge_end_pose: Pose) -> bool:
         """
@@ -254,7 +183,6 @@ class BugMover:
 
             # Calculate metrics
             dist_bug_to_goal = mv._calc_distance(bug_pose_msg.position, bridge_end_pose.position)
-            dist_bug_to_goal = mv._calc_distance(bug_pose_msg.position, bridge_end_pose.position)
 
             # --- CONDITIONS ---
             # 1. Is the bug on the bridge? (Passed the Y threshold?)
@@ -276,7 +204,6 @@ class BugMover:
                 ambush_pose.position.z = bridge_end_pose.position.z + self.GRIPPER_OFFSET_Z
                 ambush_pose.orientation = bridge_end_pose.orientation
 
-                t_robot = mv._calc_travel_time(current_robot_pose, ambush_pose)
                 t_robot = mv._calc_travel_time(current_robot_pose, ambush_pose)
 
                 # 4. Time Race: Can we beat the bug?
@@ -317,7 +244,6 @@ class BugMover:
 
         while rclpy.ok() and wait_counter < max_wait_cycles:
             curr_bug = self.node.current_bug.pose.position
-            dist = mv._calc_distance(curr_bug, bridge_end_pose.position)
             dist = mv._calc_distance(curr_bug, bridge_end_pose.position)
 
             if dist < self.TRAP_TRIGGER_DISTANCE:
