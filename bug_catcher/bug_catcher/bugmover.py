@@ -29,6 +29,9 @@ class BugMover:
         self.last_waypoints = False  # Save the last trajectory so that we can start interruption
         # paths with the end of the existing path
 
+        self.ee_cup_x_offset = +0.1
+        self.ee_cup_z_offset = +0.13
+
         self.node.get_logger().debug('BugCatcher initialization complete')
 
     # -----------------------------------------------------------------
@@ -78,16 +81,18 @@ class BugMover:
         )
         success = False
         self.node.get_logger().info(f'Stalking: {dist_to_bug}')
+
+        goal_pose = Pose(orientation=buginfo_msg.pose.pose.orientation)
+        goal_pose.position.x = buginfo_msg.pose.pose.position.x + self.ee_cup_x_offset
+        goal_pose.position.y = buginfo_msg.pose.pose.position.y
+        goal_pose.position.z = buginfo_msg.pose.pose.position.z + self.ee_cup_z_offset
         # While far from the bug, keep moving and do not close the gripper
         if dist_to_bug > 0.10:  # Raise the goal pose if far from the bug
             self.node.get_logger().info('Stalking: Big')
-            goal_pose = Pose(orientation=buginfo_msg.pose.pose.orientation)
-            goal_pose.position.x = buginfo_msg.pose.pose.position.x
-            goal_pose.position.y = buginfo_msg.pose.pose.position.y
-            goal_pose.position.z = buginfo_msg.pose.pose.position.z + 0.05
+
+            goal_pose.position.z += 0.05
         elif dist_to_bug > 0.01:  # If close, lower the gripper
             self.node.get_logger().info('Stalking: Mid')
-            goal_pose = Pose(orientation=buginfo_msg.pose.pose.orientation)
             goal_pose.position = buginfo_msg.pose.pose.position
         elif dist_to_bug < 0.01:  # If really close, close the gripper
             self.node.get_logger().info('Stalking: Small')
@@ -103,7 +108,7 @@ class BugMover:
             start_pose = self.last_waypoints[-2]
 
         if type(self.last_traj) is not bool:
-            start_traj_point = self.last_traj.points[-2]
+            start_traj_point = self.last_traj.points[-1]
             # start_traj_point = None
             # Start current trajectory from 2nd last waypoint
             # that's being executed
