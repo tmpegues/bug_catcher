@@ -52,8 +52,9 @@
         <param name="base_frame" value="base"/>
         <param name="default_color" value="blue"/>
         <param name="camera_height" value="0.5"/>
-        <param from = "$(find-pkg-share bug_catcher)/config/calibration_parameters.yaml"/>        
-        <param name="color_path" value="$(find-pkg-share bug_catcher)/config/calibrated_colors.yaml"/>
+        <param from = "$(find-pkg-share bug_catcher)/config/calibration_parameters.yaml"/>       
+        <param name="color_path_sky_cam" value="$(find-pkg-share bug_catcher)/config/sky_cam_colors.yaml"/>
+        <param name="color_path_wrist_cam" value="$(find-pkg-share bug_catcher)/config/wrist_cam_colors.yaml"/>
     </node>
 
     <!--Load the Catcher Node-->
