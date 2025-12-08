@@ -3,7 +3,7 @@
 from bug_catcher.motionplanner import MotionPlanner
 from bug_catcher.planningscene import PlanningSceneClass
 from bug_catcher.robotstate import RobotState
-from geometry_msgs.msg import Pose, Quaternion
+from geometry_msgs.msg import Pose, PoseStamped, Quaternion
 from rclpy.node import Node
 
 
@@ -58,10 +58,10 @@ class MotionPlanningInterface:
         await self.mp.execute_plan(traj)
         return True
 
-    async def MoveAboveObject(self, obj_name):
+    async def MoveAboveObject(self, pose: PoseStamped):
         """Move the robot end effector above the object."""
         # Get the coordinates of the object to pick up:
-        p = self.ps.obstacles[obj_name].pose.position
+        p = pose
         self.pre_grasp_coord.position = type(p)(x=p.x, y=p.y, z=p.z)  # Clone object
         self.pre_grasp_coord.position.z = p.z
         self.pre_grasp_coord.position.z += 0.1
@@ -104,9 +104,9 @@ class MotionPlanningInterface:
         return True
 
     # Move to object-grasp position:
-    async def MoveDownToObject(self, obj_name):
+    async def MoveDownToObject(self, pose):
         """Lower the object inbetween the gripper fingers."""
-        self.grasp_coord.position = self.ps.obstacles[obj_name].pose.position
+        self.grasp_coord.position = pose.position
 
         self.node.get_logger().info(
             f'Planning to move down to object position: {self.grasp_coord}'

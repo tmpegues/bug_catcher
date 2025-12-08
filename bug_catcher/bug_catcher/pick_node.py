@@ -52,7 +52,7 @@ class PickNode(Node):
     # Call the gripper to go pick up the object:
     async def pick_callback(self, request, response):
         """Commands the gripper to go retrieve and move the object."""
-        self.get_logger().info(f'Received pick {request.name}')
+        self.get_logger().info('Received pick')
         # Flip this value to turn off all downstream plans and executions.
         response.success = True
 
@@ -62,7 +62,7 @@ class PickNode(Node):
         # Begin the Commands to retrieve the objext:
         # Move the arm directly above the object:
         if response.success:
-            await self.mpi.MoveAboveObject(request.name)
+            await self.mpi.MoveAboveObject(request.bug.pose.pose)
 
         # Opens the gripper
         if response.success:
@@ -70,11 +70,13 @@ class PickNode(Node):
 
         # Moves directly downwards until the object is between the grippers
         if response.success:
-            response.success = await self.mpi.MoveDownToObject(request.name)
+            response.success = await self.mpi.MoveDownToObject(request.bug.pose.pose)
 
         # Closes the grippers
         if response.success:
-            response.success = await self.mpi.CloseGripper(request.name)
+            response.success = await self.mpi.CloseGripper(
+                request.name
+            )  # Nolan TODO: Fix planningscene stuff
 
         # Lifts the object slightly off the table
         if response.success:
@@ -82,7 +84,8 @@ class PickNode(Node):
 
         # Moves the object to the other side of the obstacle
         if response.success:
-            response.success = await self.mpi.MoveToGoal()
+            # response.success = await self.mpi.MoveToGoal()
+            response.success = await self.mpi.MoveAboveObject(request.base.pose)
 
         # Releases the object and detaches the rectangle
         if response.success:

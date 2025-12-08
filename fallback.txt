@@ -5,14 +5,17 @@ Pick up and sort unmoving bugs. This will essentially reuse assignment 3.2.
 MoveIt services and actions to move to, pick up, and drop off the object.
 To work with the turtles, we need to:
 1. Change the pick service to have a BugInfo msg as its request instead of a string matching the
-    name of a PlanningScene object.
-    a. The 1st step of the callback will be taking the BugInfo and getting the pose out of it.
-    b. The pick service maybe should also contain the pose of the base where the turtle is to be dropped.
+    name of a PlanningScene object. (Done, I believe)
+    a. The 1st step of the callback will be taking the BugInfo and getting the pose out of it. (Done, I believe)
+    b. The pick service maybe should also contain the pose of the base where the turtle is to be dropped. (Done, I believe)
 
 2. Modify mpi functions:
-    a. MoveAboveObject should now take a pose
+    a. MoveAboveObject should now take a pose (Done)
     b. The Gripper functions might need to have a closing and opening distance set
-    c. MoteToGoal should now take a pose
+    c. MoveToGoal should now take a pose (Done: what I did was actually change the call to MoveAboveObject and pass in the base pose)
+    d. CloseGripper takes in a planning scene object. I think it will still be necessary to use a
+        planning scene object, but I'll leave that to Nolan to create and attach the collision object.
+    e. ReleaseObject: like CloseGripper, this requires a bit of planning scene stuff that I will leave to Nolan
 
 3. The catch node will need to use this service.
 4. The launch file will need to be re-setup with the right functions

@@ -1,3 +1,4 @@
-string name
+bug_catcher_interfaces/BugInfo bug
+bug_catcher_interfaces/BasePose base
 ---
 bool success
