@@ -12,12 +12,14 @@ find_package(geometry_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/Pick.srv"
+  "srv/Sort.srv"
   "msg/BugInfo.msg"
   "msg/BugArray.msg"
   "msg/BasePose.msg"
   "msg/BasePoseArray.msg"
   DEPENDENCIES
-  geometry_msgs)
+  geometry_msgs
+  std_msgs)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

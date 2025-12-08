@@ -18,25 +18,9 @@
         <arg name="depth_fps" value="15"/>
     </include>
 
-    <!--Launch the Realsense Camera Node (wrist_camera)-->
-    <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py">
-        <arg name="camera_name" value="wrist_camera"/>
-        <arg name="camera_namespace" value="camera"/>
-        <arg name="serial_no" value="'242322077613'"/>
-        <arg name="pointcloud.enable" value="false"/>
-        <arg name="color_width" value="640"/>
-        <arg name="color_height" value="480"/>
-        <arg name="color_fps" value="15"/>
-        <arg name="depth_fps" value="15"/>
-    </include>
-
-    <!--Static Transform Publisher from hand to wrist_camera-->
-    <node pkg="tf2_ros" exec="static_transform_publisher" name="wrist_cam_tf_publisher"
-          args="0.05 0 -0.05 0 0 0 fer_hand_tcp wrist_camera_link" />
-
     <!--Static Transform Publisher from hand to new_tcp-->
     <node pkg="tf2_ros" exec="static_transform_publisher" name="new_tcp_tf_publisher"
-      args="-0.1 0.0 0.13 0.0 0.0 0.0 fer_hand_tcp new_tcp" />
+      args="0.1 0.0 0.13 0.0 0.0 0.0 fer_hand_tcp new_tcp" />
 
     <!--Launch the April tag identification Node-->
     <node pkg="apriltag_ros" exec="apriltag_node" name="apriltag">
@@ -53,11 +37,10 @@
         <param name="camera_height" value="0.5"/>
         <param from = "$(find-pkg-share bug_catcher)/config/calibration_parameters.yaml"/>
         <param name="color_path_sky_cam" value="$(find-pkg-share bug_catcher)/config/sky_cam_colors.yaml"/>
-        <param name="color_path_wrist_cam" value="$(find-pkg-share bug_catcher)/config/wrist_cam_colors.yaml"/>
     </node>
 
-    <!--Load the Catcher Node-->
-    <node pkg="bug_catcher" exec="catcher_node" name="catcher_node" output="screen">
+    <!--Load the Sort Node-->
+    <node pkg="bug_catcher" exec="sort_node" name="sort_node" output="screen">
         <param name="filename" value="$(find-pkg-share bug_catcher)/config/objects.yaml"/>
     </node>
 
@@ -68,9 +51,9 @@
           args="/bug_god/debug_view"/>
 
     <!-- Needed for the picking and moving of still bugs -->
-    <node pkg="bug_catcher" exec="pick_node">
+    <!-- <node pkg="bug_catcher" exec="pick_node">
         <param name="filename" value="$(find-pkg-share bug_catcher)/config/objects.yaml"/>
-    </node>
+    </node> -->
 
 
 </launch>

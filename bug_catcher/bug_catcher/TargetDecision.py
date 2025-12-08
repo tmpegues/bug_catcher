@@ -13,14 +13,9 @@ Publishers
 + /bug_god/bug_array (bug_catcher_interfaces.msg.BugArray): All detected bugs in Base Frame.
 + /bug_god/debug_view (sensor_msgs.msg.Image): Sky cam visualization with all bugs.
 + /bug_god/mask_view (sensor_msgs.msg.Image): Sky cam binary mask.
-+ /wrist_camera/target_bug (bug_catcher_interfaces.msg.BugInfo): Target locked by wrist cam.
-+ /wrist_camera/debug_view (sensor_msgs.msg.Image): Wrist cam visualization.
-+ /wrist_camera/mask_view (sensor_msgs.msg.Image): Wrist cam binary mask.
-
 Subscribers
 -----------
 + /camera/bug_god/color/image_raw (sensor_msgs.msg.Image): Sky Cam Feed.
-+ /camera/wrist_camera/color/image_raw (sensor_msgs.msg.Image): Wrist Cam Feed.
 + /target_color (std_msgs.msg.String): Receives commands to switch the detection target.
 
 Parameters
@@ -43,7 +38,7 @@ from bug_catcher.sort import Sort
 from bug_catcher.vision import Vision
 
 from bug_catcher_interfaces.msg import BugArray, BugInfo, BasePoseArray, BasePose
-from bug_catcher_interfaces.srv import Pick
+#from bug_catcher_interfaces.srv import Sort
 
 import cv2
 
@@ -112,7 +107,6 @@ class TargetDecision(Node):
         self.declare_parameter('base_frame', 'base')
         self.declare_parameter('gripper_frame', 'fer_hand_tcp')
         self.declare_parameter('color_path_sky_cam', '')
-        self.declare_parameter('color_path_wrist_cam', '')
         self.declare_parameter('pad_start', 5)
         self.declare_parameter('pad_end', 10)
 
@@ -135,7 +129,6 @@ class TargetDecision(Node):
         self.base_frame = self.get_parameter('base_frame').value
         self.gripper_frame = self.get_parameter('gripper_frame').value
         self.color_path_sky_cam = self.get_parameter('color_path_sky_cam').value
-        self.color_path_wrist_cam = self.get_parameter('color_path_wrist_cam').value
         self.pad_start = self.get_parameter('pad_start').get_parameter_value().integer_value
         self.pad_end = self.get_parameter('pad_end').get_parameter_value().integer_value
         self.tag_params = {
@@ -172,12 +165,10 @@ class TargetDecision(Node):
 
         # Vision Setup
         self.sky_cam_vision = Vision()
-        self.wrist_cam_vision = Vision()
         self.bridge = CvBridge()
         self._load_calibrated_colors()
 
         self.sky_intrinsics = None
-        self.wrist_intrinsics = None
 
         # ==================================
         # 2. Sky Cam (bug_god) Setup
@@ -188,13 +179,8 @@ class TargetDecision(Node):
         self.sky_mask_pub = self.create_publisher(Image, '/bug_god/mask_view', 10)
         self.target_switch_pub = self.create_publisher(String, '/target_color', 10)
         self.switch_debug_pub = self.create_publisher(Image, '/bug_god/switch_view', 10)
-
-        # ==================================
-        # 3. Wrist Cam Setup
-        # ==================================
-        self.wrist_target_pub = self.create_publisher(BugInfo, '/wrist_camera/target_bug', 10)
-        self.wrist_debug_pub = self.create_publisher(Image, '/wrist_camera/debug_view', 10)
-        self.wrist_mask_pub = self.create_publisher(Image, '/wrist_camera/mask_view', 10)
+        # Create a publisher for the target bug:
+        self.sky_target_pub = self.create_publisher(BugInfo, '/bug_god/target_bug', 10)
         # Create a publisher for the drop locations:
         self.drop_pub = self.create_publisher(BasePoseArray, 'drop_locs', 10)
 
@@ -246,15 +232,9 @@ class TargetDecision(Node):
         # Set the switch mask to remove detection of color task switcher:
         self.switch_mask = None
 
-        # Store the latest sky target seen for wrist cam use
+        # Store the latest sky target:
         self.latest_sky_target = None
         self.last_sky_update_time = self.get_clock().now()
-
-        # This service client is used for the fallback of picking up still bugs
-        service_cb_group = MutuallyExclusiveCallbackGroup()
-        self.pick_client = self.create_client(Pick, 'pick', callback_group=service_cb_group)
-        if not self.pick_client.wait_for_service(timeout_sec=5.0):
-            raise RuntimeError('Failed to find Pick service')
 
         self.get_logger().info(f'Node started. Current Target: [{self.target_color}]')
 
@@ -276,22 +256,9 @@ class TargetDecision(Node):
         except (IOError, FileNotFoundError) as e:
             self.get_logger().error(f'Failed to load Sky calibration: {e}')
 
-        # --- Load Wrist Cam ---
-        if not self.color_path_wrist_cam:
-            self.color_path_wrist_cam = default_path  # Fallback to same default or a different one
-            self.get_logger().info(f'No wrist path param. Using default: {default_path}')
-
-        try:
-            self.get_logger().info(f'Loading Wrist Calibration: {self.color_path_wrist_cam}')
-            self.wrist_cam_vision.load_calibration(self.color_path_wrist_cam)
-        except (IOError, FileNotFoundError) as e:
-            self.get_logger().error(f'Failed to load Wrist calibration: {e}')
-
-        # Verify Target Color in both
+        # Verify Target Color:
         if self.target_color not in self.sky_cam_vision.colors:
             self.get_logger().warn(f"Target '{self.target_color}' missing in Sky config!")
-        if self.target_color not in self.wrist_cam_vision.colors:
-            self.get_logger().warn(f"Target '{self.target_color}' missing in Wrist config!")
 
     def _pixel_to_pose(self, u, v, intrinsics, height):
         """
@@ -688,21 +655,6 @@ class TargetDecision(Node):
                         10,
                         callback_group=sky_cb_group,
                     )
-                    wrist_cb_group = MutuallyExclusiveCallbackGroup()
-                    self.wrist_image_sub = self.create_subscription(
-                        Image,
-                        '/camera/wrist_camera/color/image_raw',
-                        self.wrist_image_cb,
-                        10,
-                        callback_group=wrist_cb_group,
-                    )
-                    self.wrist_info_sub = self.create_subscription(
-                        CameraInfo,
-                        '/camera/wrist_camera/color/camera_info',
-                        self.wrist_info_cb,
-                        10,
-                        callback_group=wrist_cb_group,
-                    )
 
             case State.PUBLISHING:
                 pass
@@ -738,12 +690,6 @@ class TargetDecision(Node):
         if self.sky_intrinsics is None:
             self.sky_intrinsics = np.array(msg.k).reshape(3, 3)
             self.get_logger().info('Sky Camera (Bug God) Intrinsics Received.')
-
-    def wrist_info_cb(self, msg):
-        """Store Wrist Camera intrinsics."""
-        if self.wrist_intrinsics is None:
-            self.wrist_intrinsics = np.array(msg.k).reshape(3, 3)
-            self.get_logger().info('Wrist Camera Intrinsics Received.')
 
     def sky_image_cb(self, msg):
         """
@@ -1042,115 +988,42 @@ class TargetDecision(Node):
                     self.bridge.cv2_to_imgmsg(switch_debug_frame, encoding='bgr8')
                 )
 
-    def wrist_image_cb(self, msg):
-        """
-        Process Wrist Camera Images.
+                # Mask just the target color and publish the location of the target bug:
+                frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+                mask = np.zeros(frame.shape[:2], dtype='uint8')
+                detections, _, mask = self.sky_cam_vision.detect_objects(frame, self.target_color)
+                results, final_debug_frame = self.sky_cam_vision.update_tracker(detections, frame)
 
-        Only looks for the currently selected TARGET COLOR.
-        Detects the object, transforms the pose to the Base Frame, and publishes
-        a BugInfo message for the Catcher Node.
+                final_target = None
+                # Assume the target closest to the end effector is the target:
+                if len(results) > 0:
+                    obj_id, u, v = results[0]
 
-        Args:
-        ----
-        msg (sensor_msgs.msg.Image): The raw image from Wrist Cam.
+                    pose_cam = self._pixel_to_pose(u, v, self.sky_intrinsics, cam_height)
 
-        """
-        if self.wrist_intrinsics is None:
-            return
+                    if transform_stamped:
+                        try:
+                            # Transform to Base Frame
+                            pose_base = self.apply_transform(pose_cam, transform_stamped)
 
-        try:
-            frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-        except CvBridgeError as e:
-            self.get_logger().error(f'CV Bridge Error: {e}')
-            return
+                            correct_pose_stamped = self._create_pose_stamped(pose_base, msg.header.stamp)
 
-        cam_frame_id = msg.header.frame_id
-        cam_height, transform_stamped = self.get_cam_height_and_transform(cam_frame_id)
+                            target_bug = BugInfo()
+                            target_bug.id = int(obj_id)
+                            target_bug.color = self.target_color
+                            target_bug.target = True
+                            target_bug.pose = correct_pose_stamped
 
-        if cam_height is None:
-            self.get_logger().info('Wrist Cam height not yet available.')
-            return  # Don't process information if the camera height isn't calibrated.
+                            final_target = target_bug
+                            final_target.pose.header.stamp = msg.header.stamp  # Update timestamp
 
-        # 1. Detect ONLY the target color
-        detections, _, mask = self.wrist_cam_vision.detect_objects(frame, self.target_color)
-        results, final_debug_frame = self.wrist_cam_vision.update_tracker(detections, frame)
-
-        final_target = None
-        source = 'NONE'
-
-        # =================================
-        # Condition 1: Use Wrist Cam Target
-        # =================================
-        # Assume the largest blob (first result) is the target in the wrist view
-        if len(results) > 0:
-            obj_id, u, v = results[0]
-
-            pose_cam = self._pixel_to_pose(u, v, self.wrist_intrinsics, cam_height)
-
-            if transform_stamped:
-                try:
-                    # Transform to Base Frame
-                    pose_base = self.apply_transform(pose_cam, transform_stamped)
-
-                    correct_pose_stamped = self._create_pose_stamped(pose_base, msg.header.stamp)
-
-                    target_bug = BugInfo()
-                    target_bug.id = int(obj_id)
-                    target_bug.color = self.target_color
-                    target_bug.target = True
-                    target_bug.pose = correct_pose_stamped
-
-                    final_target = target_bug
-                    final_target.pose.header.stamp = msg.header.stamp  # Update timestamp
-                    source = 'WRIST_CAM'
-
-                    # Nolan TODO: Does this node know where the bases are? Uncomment and fix the
-                    # next line.
-
-                    # success = await self.pick_client.call_async(Pick(bug=target_bug,base=base_info))
-                    self.wrist_target_pub.publish(target_bug)
-
-                    # print(target_bug)
-
-                    cv2.putText(
-                        final_debug_frame,
-                        'TARGET_LOCKED',
-                        (u, v - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.8,
-                        (0, 255, 0),
-                        2,
-                    )
-                except (AttributeError, TypeError) as e:
-                    self.get_logger().info(f'No target found in wrist_camera: {e}')
-
-        elif self.latest_sky_target is not None:
-            # =================================
-            # Condition 2: Use Sky Cam Target
-            # =================================
-            # Check if the latest sky target is recent enough (1 second timeout)
-            time_diff = (self.get_clock().now() - self.last_sky_update_time).nanoseconds / 1e9
-            if time_diff < 0.5:
-                final_target = self.latest_sky_target
-                final_target.pose.header.stamp = msg.header.stamp
-                source = 'BUG_GOD'
-
-        # 2. Publish
-        if final_target is not None:
-            self.wrist_target_pub.publish(final_target)
-            cv2.putText(
-                final_debug_frame,
-                f'SOURCE: {source}',
-                (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (0, 255, 255),
-                2,
-            )
-
-        self.wrist_debug_pub.publish(self.bridge.cv2_to_imgmsg(final_debug_frame, encoding='bgr8'))
-        if mask is not None:
-            self.wrist_mask_pub.publish(self.bridge.cv2_to_imgmsg(mask, encoding='mono8'))
+                            self.sky_target_pub.publish(target_bug)
+                        except (
+                            tf2_ros.LookupException,
+                            tf2_ros.ExtrapolationException,
+                            tf2_ros.ConnectivityException,
+                        ) as e:
+                            self.get_logger().info(f'Transform  lookup failed: {e}')
 
 
 def main(args=None):

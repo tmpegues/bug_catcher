@@ -58,6 +58,7 @@ setup(
             'target_decision_node = bug_catcher.TargetDecision:main',
             'turtle_sim_adjuster = bug_catcher.turtle_sim_adjuster:main',
             'turtle_pilot = bug_catcher.turtle_pilot:main',
+            'sort_node = bug_catcher.bug_sort:main',
         ],
     },
 )
