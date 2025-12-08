@@ -64,6 +64,7 @@ class SorterNode(Node):
         # Load static scene objects (table, walls, etc.)
         self.mpi.ps.load_scene(filename)
 
+        lockout_group = MutuallyExclusiveCallbackGroup()
         # SUBSCRIPTIONS:
         # Subscription for the bug tracking info:
         self.bug_sub = self.create_subscription(
@@ -74,7 +75,7 @@ class SorterNode(Node):
             BasePoseArray, 'drop_locs', self.drop_callback, 10
         )
         self.targ_sub = self.create_subscription(
-            BugInfo, 'bug_god/target_bug', self.target_callback, 10
+            BugInfo, 'bug_god/target_bug', self.target_callback, 10, callback_group=lockout_group
         )
 
         # PUBLISHERS:
@@ -84,9 +85,10 @@ class SorterNode(Node):
         )
         self.planscene = self.create_publisher(PlanningScene, '/planning_scene', 10)
 
+
         # SERVICES:
         self.sort_service = self.create_service(
-            Sort, '/sort', self.sort_callback, callback_group=MutuallyExclusiveCallbackGroup()
+            Sort, '/sort', self.sort_callback, callback_group=lockout_group
         )
 
         # VARIABLES:
@@ -262,7 +264,7 @@ class SorterNode(Node):
         for drop_pose in drop_msg.base_poses:
             self.drop_locs[drop_pose.color] = drop_pose.pose
 
-    def target_callback(self, target_msg):
+    async def target_callback(self, target_msg):
         """Update and set the current target position to catch."""
         # Recieves a BugInfo msg:
         self.target_pose = target_msg.pose.pose
@@ -275,6 +277,8 @@ class SorterNode(Node):
         # Flip this value to turn off all downstream plans and executions.
         response.success = True
 
+        locked_pose = self.target_pose
+        locked_pose.position.z += .09
         # Publish the change in the
 
         # Continue the pickup process until there are no bugs of that color left:
@@ -286,7 +290,7 @@ class SorterNode(Node):
             # Begin the Commands to retrieve the objext:
             # Move the arm directly above the object:
             if response.success:
-                await self.mpi.MoveAboveObject(self.target_pose.position)
+                await self.mpi.MoveAboveObject(locked_pose.position)
 
             # Opens the gripper
             if response.success:
@@ -294,7 +298,7 @@ class SorterNode(Node):
 
             # Moves directly downwards until the object is between the grippers
             if response.success:
-                response.success = await self.mpi.MoveDownToObject(self.target_pose)
+                response.success = await self.mpi.MoveDownToObject(locked_pose)
 
             # Closes the grippers and add the target bug on the end effector:
             if response.success:
@@ -310,32 +314,34 @@ class SorterNode(Node):
                 response.success = await self.mpi.MoveAboveObject(
                     self.drop_locs[request.color.data].position
                 )
+                self.get_logger().info(f'{self.drop_locs[request.color.data].position}')
 
             # Releases the object and detaches the rectangle
             if response.success:
-                response.success = await self.mpi.ReleaseObject(self.target_pose.position)
+                response.success = await self.mpi.ReleaseObject('target_bug')
 
             # Return the robot to the Home Position:
             if response.success:
                 response.success = await self.mpi.GetReady()
 
-        self.get_logger.info(f'All {request.color} bugs are caught! Send another service!')
+        self.get_logger.info(f'All {request.color} bugs are caught! \
+                              Send another service to restart sorting!')
         return response
 
 
 def main(args=None):
     """Run the main entry point for the Catcher Node."""
     rclpy.init(args=args)
-    catcher_node = SorterNode()
+    sort_node = SorterNode()
     executor = MultiThreadedExecutor()
-    executor.add_node(catcher_node)
+    executor.add_node(sort_node)
 
     try:
         executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
-        catcher_node.destroy_node()
+        sort_node.destroy_node()
         rclpy.shutdown()
 
 

@@ -19,8 +19,8 @@
     </include>
 
     <!--Static Transform Publisher from hand to new_tcp-->
-    <node pkg="tf2_ros" exec="static_transform_publisher" name="new_tcp_tf_publisher"
-      args="0.1 0.0 0.13 0.0 0.0 0.0 fer_hand_tcp new_tcp" />
+    <!-- <node pkg="tf2_ros" exec="static_transform_publisher" name="new_tcp_tf_publisher"
+      args="0.1 0.0 0.13 0.0 0.0 0.0 fer_hand_tcp new_tcp" /> -->
 
     <!--Launch the April tag identification Node-->
     <node pkg="apriltag_ros" exec="apriltag_node" name="apriltag">

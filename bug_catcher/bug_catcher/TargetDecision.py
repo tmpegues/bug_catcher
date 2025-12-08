@@ -889,17 +889,17 @@ class TargetDecision(Node):
                             1,
                         )
 
-                        # TODO: Determine Closest Target Bug Logic can be improved
+                        # Determine Closest Target Bug Logic can be improved:
+                        # Set the target bug here:
                         if color_name == self.target_color and gripper_pos_base:
                             dx = pose_base.position.x - gripper_pos_base.x
                             dy = pose_base.position.y - gripper_pos_base.y
                             dist = dx**2 + dy**2
-                        else:
-                            dist = 10  # Set it far away when target is switched
 
                             if dist < closest_dist:
                                 closest_dist = dist
                                 target_bug_index = len(all_detected_bugs)
+                                bug_info.target = True
 
                         all_detected_bugs.append(bug_info)
 
