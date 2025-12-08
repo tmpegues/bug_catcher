@@ -129,15 +129,14 @@ class TargetDecision(Node):
         self.declare_parameter('color_switch_y', 0.00000)
         self.declare_parameter('color_switch_z', 0.1524)
 
-
         # Set the tag and config parameter values:
         self.target_color = self.get_parameter('default_color').value
         self.base_frame = self.get_parameter('base_frame').value
         self.gripper_frame = self.get_parameter('gripper_frame').value
         self.color_path_sky_cam = self.get_parameter('color_path_sky_cam').value
         self.color_path_wrist_cam = self.get_parameter('color_path_wrist_cam').value
-        self.pad_start = self.get_parameter('pad_start').get_parameter_value()._integer_value
-        self.pad_end = self.get_parameter('pad_end').get_parameter_value()._integer_value
+        self.pad_start = self.get_parameter('pad_start').get_parameter_value().integer_value
+        self.pad_end = self.get_parameter('pad_end').get_parameter_value().integer_value
         self.tag_params = {
             1: (
                 self.get_parameter('calibration.tags.tag_2.x').get_parameter_value().double_value,
@@ -760,13 +759,15 @@ class TargetDecision(Node):
                 # Loop through Tags 5-10 and set the location of the drop pads:
                 # Establish the locations for the drop off pads:
                 self.drop_locs = {}
-                for i in range(self.pad_start, self.pad_end):
+                self.get_logger().info(f'pad_start: {self.pad_start}')
+                for i in range(self.pad_start, self.pad_end + 1):
                     # Listen and store the tf of base_marker seen by camera:
                     try:
                         tf_msg = self.tf_buffer.lookup_transform(
                             'base',
                             f'tag_{i}',
                             rclpy.time.Time(),
+                            timeout=rclpy.duration.Duration(seconds=1.0),
                         )
                         # Convert the transform message to a matrix and store.
                         pose = Pose()
@@ -774,19 +775,21 @@ class TargetDecision(Node):
                         pose.position.y = float(tf_msg.transform.translation.y)
                         pose.position.z = float(tf_msg.transform.translation.z)
                         pose.orientation.w = 1.0
+                        self.get_logger().info(f'i: {i}')
+                        self.get_logger().info(f'pad_start: {self.pad_start}')
+                        self.get_logger().info(f' pose is {pose}')
                         # Set the color string of the id:
-                        # These id to color mappings are consistant across the package:
-                        if i == 1:
+                        if i == self.pad_start:
                             self.drop_locs['pink'] = pose
-                        elif i == 2:
+                        elif i == self.pad_start + 1:
                             self.drop_locs['green'] = pose
-                        elif i == 3:
+                        elif i == self.pad_start + 2:
                             self.drop_locs['blue'] = pose
-                        elif i == 4:
+                        elif i == self.pad_start + 3:
                             self.drop_locs['orange'] = pose
-                        elif i == 5:
+                        elif i == self.pad_start + 4:
                             self.drop_locs['purple'] = pose
-                        elif i == 6:
+                        elif i == self.pad_start + 5:
                             self.drop_locs['yellow'] = pose
                     except (
                         tf2_ros.LookupException,
@@ -795,21 +798,22 @@ class TargetDecision(Node):
                     ) as e:
                         self.get_logger().info(f'Unable to find drop location for tag_{i}: {e}')
                 # Publish the locations of the drop points:
-                pose_msg = BasePoseArray()
+                base_poses = BasePoseArray()
                 for color, pose in self.drop_locs.items():
                     pair = BasePose()
                     pair.color = color
                     pair.pose = pose
-                    pose_msg.base_poses.append(pair)
-                self.drop_pub.publish(pose_msg)
+                    base_poses.base_poses.append(pair)
+                self.drop_pub.publish(base_poses)
                 # Switch to the Publication state:
                 self.state = State.PUBLISHING
             case State.PUBLISHING:
                 try:
                     frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+                    mask = np.zeros(frame.shape[:2], dtype='uint8')
                     # Mask image to crop out unwanted filtering regions. (Tags will be established)
                     # ####################### Begin_Citation [NK3] ###################
-                    mask = np.zeros(frame.shape[:2], dtype='uint8')
+                    world_mask = np.zeros(frame.shape[:2], dtype='uint8')
 
                     # Get the pixel locations of the top left/bottom right of the mask positions
                     #   This will map to markers 2 and 4.
@@ -846,9 +850,9 @@ class TargetDecision(Node):
                     v_R = int(fy * (Y_R / Z_R) + cy)
 
                     # Draw the mask to be within the tags:
-                    cv2.rectangle(mask, (u_L, v_L), (u_R, v_R), 255, -1)
+                    cv2.rectangle(world_mask, (u_L, v_L), (u_R, v_R), 255, -1)
 
-                    frame = cv2.bitwise_and(frame, frame, mask=mask)
+                    frame = cv2.bitwise_and(frame, frame, mask=world_mask)
                     # if switch mask is not none, apply it:
                     if self.switch_mask is not None:
                         inverted_mask = cv2.bitwise_not(self.switch_mask)
@@ -940,9 +944,9 @@ class TargetDecision(Node):
                         else:
                             dist = 10       # Set it far away when target is switched
 
-                    if dist < closest_dist:
-                        closest_dist = dist
-                        target_bug_index = len(all_detected_bugs)
+                            if dist < closest_dist:
+                                closest_dist = dist
+                                target_bug_index = len(all_detected_bugs)
 
                         all_detected_bugs.append(bug_info)
 
@@ -970,10 +974,10 @@ class TargetDecision(Node):
 
                 # Create a mask of the image at the color_switch point to change the color when
                 # the block has been changed. (Pre_existing mask exists on image)
-                frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+                switch_frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
                 # save the switch mask to actively apply it to the color detection masks.
                 #   This will ensure we don't detect the color block as a bug.
-                self.switch_mask = np.zeros(frame.shape[:2], dtype='uint8')
+                self.switch_mask = np.zeros(switch_frame.shape[:2], dtype='uint8')
                 # Set the current location in base:
                 vec = np.array(
                     [self.color_switch_x, self.color_switch_y, self.color_switch_z, 1.0]
@@ -1016,15 +1020,12 @@ class TargetDecision(Node):
 
                 # Draw the mask to be within the tags:
                 cv2.rectangle(self.switch_mask, (u_L, v_L), (u_R, v_R), 255, -1)
-                frame = cv2.bitwise_and(frame, frame, mask=self.switch_mask)
+                switch_frame = cv2.bitwise_and(switch_frame, switch_frame, mask=self.switch_mask)
 
                 # Loop through colors and if it returns a position, then switch the target.
-                switch_debug_frame = frame.copy()
+                switch_debug_frame = switch_frame.copy()
                 for color_name in self.sky_cam_vision.colors.keys():
-                    detections, _, _ = self.sky_cam_vision.detect_objects(frame, color_name)
-                    results, final_debug_frame = self.sky_cam_vision.update_tracker(
-                        detections, switch_debug_frame
-                    )
+                    detections, _, _ = self.sky_cam_vision.detect_objects(switch_debug_frame, color_name)
                     # If a color is detected publish that color to the topic:
                     if len(detections) != 0:
                         self.target_switch_pub.publish(String(data=color_name))
@@ -1095,7 +1096,7 @@ class TargetDecision(Node):
                     source = 'WRIST_CAM'
 
                     self.wrist_target_pub.publish(target_bug)
-                    print(target_bug)
+                    # print(target_bug)
 
                     cv2.putText(
                         final_debug_frame,

@@ -93,7 +93,7 @@ class CatcherNode(Node):
 
         # Subscription for the bug tracking info:
         self.bug_sub = self.create_subscription(
-            BugArray, '/bug_god/bug_array', self._publish_markers, 10
+            BugArray, '/bug_god/bug_array', self.publish_markers, 10
         )
         # Subscription to gather and store the poses of the drop locations:
         self.drop_sub = self.create_subscription(
@@ -102,7 +102,7 @@ class CatcherNode(Node):
 
         # PUBLISHERS:
         markerQoS = QoSProfile(depth=10, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
-        self.marker_pub = self.create_publisher(MarkerArray, 'visualization_marker_array', markerQoS)
+        self.marker_pub = self.create_publisher(MarkerArray, '/visualization_marker_array', markerQoS)
         self.planscene = self.create_publisher(PlanningScene, '/planning_scene', 10)
 
         # Establish the required connections and trackers for updating the planningscene each call.
@@ -139,7 +139,6 @@ class CatcherNode(Node):
         # self.sky_sub = self.create_subscription(
         #     BugArray, '/bug_god/bug_array', self.sky_observer_callback, 10
         # )
-
         # # Visualization Publishers
         # markerQoS = QoSProfile(depth=10, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
         # self.marker_pub = self.create_publisher(
@@ -148,7 +147,7 @@ class CatcherNode(Node):
         # self.scene_pub = self.create_publisher(PlanningScene, '/planning_scene', 10)
 
         # Load new gripper TCP frame
-        self.new_TCP()
+        # self.new_TCP()
 
         # 6. Main Control Loop Timer (10 Hz)
         self.timer = self.create_timer(0.1, self.control_loop)
@@ -159,63 +158,134 @@ class CatcherNode(Node):
     # Helper Functions
     # =========================================================================
 
-    def _publish_markers(self, bug_msg):
-        """Visualizes bugs in RViz. Adapted from calibration node."""
-        marker_array = MarkerArray()
+    def publish_markers(self, bug_msg):
+        """
+        Update detected bug positions and the planning scene.
 
+        Parameters
+        ----------
+        bug_msg :
+            A list/array of bug detection messages. Each bug contains:
+            - id: int8
+                The unique identifier for that colored bug.
+            - is_target : bool
+                True if the bug should be treated as the active collision target.
+            - pose : geometry_msgs/PoseStamped (or similar)
+                The estimated pose of the bug in the camera/base frame.
+            - color : str
+                The bug's color label (e.g., 'pink', 'blue', ...).
+
+        """
+        self.get_logger().info(f'length: {len(bug_msg.bugs)}')
+        # Remove the last target bug if it exists:
+        if self.last_target_bug is None:
+            pass
+        else:
+            self.mpi.ps.remove_obstacle(self.last_target_bug)
+            self.last_target_bug = None
+        # Create an array of markers to build the arena:
+        marker_array = MarkerArray()
+        markers = []
+
+        self.get_logger().info('test')
+
+        # Break apart each bug message: is_target: 1-> CollisionObject | 0-> Marker
         for i, bug in enumerate(bug_msg.bugs):
+            # Check if the bug is the target or not:
             marker = Marker()
             marker.header.frame_id = 'base'
-            marker.header.stamp = self.get_clock().now().to_msg()
+            marker.header.stamp = bug.pose.header.stamp  # The bug gets a time stamp.
             marker.ns = 'bug_markers'
-            marker.id = i
             marker.type = Marker.CUBE
             marker.action = Marker.ADD
 
-            # Correctly access nested Pose (BugInfo -> PoseStamped -> Pose)
-            marker.pose.position.x = bug.pose.pose.position.x
-            marker.pose.position.y = bug.pose.pose.position.y
-            marker.pose.position.z = bug.pose.pose.position.z
-            marker.pose.orientation = bug.pose.pose.orientation
+            if bug.target is True:
+                prim = SolidPrimitive()
+                prim.type = SolidPrimitive.BOX
 
-            # Highlight Target Logic for Visualization
-            if bug.target:
+                prim.dimensions = [0.03, 0.03, 0.03]
+
+                current_target_bug = Obstacle('target_bug', bug.pose.pose, prim)
+                self.mpi.ps.add_obstacle(current_target_bug)
+                self.last_target_bug = current_target_bug
+
+                # Make the target Marker larger and black:
+                marker.pose.position.x = bug.pose.pose.position.x
+                marker.pose.position.y = bug.pose.pose.position.y
+                marker.pose.position.z = bug.pose.pose.position.z
+                marker.pose.orientation.x = 0.0
+                marker.pose.orientation.y = 0.0
+                marker.pose.orientation.z = 0.0
+                marker.pose.orientation.w = 1.0
                 marker.scale.x = 0.05
                 marker.scale.y = 0.05
                 marker.scale.z = 0.05
                 marker.color.r = 0.0
                 marker.color.g = 0.0
-                marker.color.b = 0.0  # Black for target
+                marker.color.b = 0.0
+                marker.color.a = 1.0
+                marker.lifetime.sec = 0
+                marker.lifetime.nanosec = 20000000
+                markers.append(marker)
             else:
+                # The bug is not a current target, just track it as a colored marker and publish.
+                # Set the location of the bug:
+                marker.pose.position.x = bug.pose.pose.position.x
+                marker.pose.position.y = bug.pose.pose.position.y
+                marker.pose.position.z = bug.pose.pose.position.z
+
+                marker.pose.orientation.x = bug.pose.pose.orientation.x
+                marker.pose.orientation.y = bug.pose.pose.orientation.y
+                marker.pose.orientation.z = bug.pose.pose.orientation.z
+                marker.pose.orientation.w = bug.pose.pose.orientation.w
                 marker.scale.x = 0.03
                 marker.scale.y = 0.03
                 marker.scale.z = 0.03
-                # Color mapping
-                if bug.color == 'red':
-                    marker.color.r = 1.0
-                elif bug.color == 'blue':
-                    marker.color.b = 1.0
-                elif bug.color == 'green':
-                    marker.color.g = 1.0
-                elif bug.color == 'pink':
+                marker.lifetime.sec = 0
+                marker.lifetime.nanosec = 20000000
+                markers.append(marker)
+
+                # Assign a specific id to each marker based on color identity and color:
+                if bug.color == 'pink':
                     marker.color.r = 1.0
                     marker.color.g = 0.75
                     marker.color.b = 0.8
+                    marker.color.a = 1.0
+                    marker.id = int('1' + str(i))  # Sets a unique number based on color
+                elif bug.color == 'green':
+                    marker.color.r = 0.0
+                    marker.color.g = 1.0
+                    marker.color.b = 0.0
+                    marker.color.a = 1.0
+                    marker.id = int('2' + str(i))
+                elif bug.color == 'blue':
+                    marker.color.r = 0.0
+                    marker.color.g = 0.0
+                    marker.color.b = 1.0
+                    marker.color.a = 1.0
+                    marker.id = int('3' + str(i))
                 elif bug.color == 'orange':
                     marker.color.r = 1.0
                     marker.color.g = 0.5
                     marker.color.b = 0.0
+                    marker.color.a = 1.0
+                    marker.id = int('4' + str(i))
                 elif bug.color == 'purple':
                     marker.color.r = 0.5
+                    marker.color.g = 0.0
                     marker.color.b = 0.5
-                else:
+                    marker.color.a = 1.0
+                    marker.id = int('5' + str(i))
+                elif bug.color == 'yellow':
                     marker.color.r = 1.0
-                    marker.color.g = 1.0  # White/Yellow default
-
-            marker.color.a = 1.0
-            marker.lifetime.sec = 0  # Persistent until next update
-            marker_array.markers.append(marker)
-
+                    marker.color.g = 1.0
+                    marker.color.b = 0.0
+                    marker.color.a = 1.0
+                    marker.id = int('6' + str(i))
+                self.get_logger().info(f'id: {marker.id}')
+                markers.append(marker)
+        # Update Rviz markers for all colored bugs:
+        marker_array.markers = markers
         self.marker_pub.publish(marker_array)
 
     def drop_callback(self, drop_msg):
@@ -236,25 +306,25 @@ class CatcherNode(Node):
         for drop_pose in drop_msg.base_poses:
             self.drop_locs[drop_pose.color] = drop_pose.pose
 
-    def new_TCP(self):
-        """Attach a new TCP frame for the gripper."""
-        prim = SolidPrimitive()
-        prim.type = SolidPrimitive.CYLINDER
-        prim.dimensions = [0.13, 0.12]  # height, radius
+    # def new_TCP(self):
+    #     """Attach a new TCP frame for the gripper."""
+    #     prim = SolidPrimitive()
+    #     prim.type = SolidPrimitive.CYLINDER
+    #     prim.dimensions = [0.13, 0.12]  # height, radius
 
-        fixture_pose = Pose()
-        fixture_pose.position.x = OFFSET_X
-        fixture_pose.position.y = 0.0
-        fixture_pose.position.z = -OFFSET_Z / 2.0
-        fixture_pose.orientation.w = 1.0
+    #     fixture_pose = Pose()
+    #     fixture_pose.position.x = OFFSET_X
+    #     fixture_pose.position.y = 0.0
+    #     fixture_pose.position.z = -OFFSET_Z / 2.0
+    #     fixture_pose.orientation.w = 1.0
 
-        fixture_name = 'new_tcp_fixture'
-        obs = Obstacle(fixture_name, fixture_pose, prim)
+    #     fixture_name = 'new_tcp_fixture'
+    #     obs = Obstacle(fixture_name, fixture_pose, prim)
 
-        self.mpi.ps.add_obstacle(obs)
-        self.mpi.ps.attach_obstacle(fixture_name)
+    #     self.mpi.ps.add_obstacle(obs)
+    #     self.mpi.ps.attach_obstacle(fixture_name)
 
-        self.get_logger().info('New TCP frame configured for gripper.')
+    #     self.get_logger().info('New TCP frame configured for gripper.')
 
     # =========================================================================
     # Callbacks (Input Handling)
@@ -314,7 +384,6 @@ class CatcherNode(Node):
                 if (self.get_clock().now() - self.last_traj_time) > Duration(seconds=0.01):
                     if self.current_target_info:
                         target_to_send = self.current_target_info
-                        print(target_to_send)
                         # target_to_send.pose.pose.position.x += OFFSET_X
                         target_to_send.pose.pose.position.z = self.grasp_z
                         log_msg = (
