@@ -17,5 +17,5 @@ To work with the turtles, we need to:
         planning scene object, but I'll leave that to Nolan to create and attach the collision object.
     e. ReleaseObject: like CloseGripper, this requires a bit of planning scene stuff that I will leave to Nolan
 
-3. The catch node will need to use this service.
-4. The launch file will need to be re-setup with the right functions
+3. The catch node will need to use this service. (I'm not sure which node this should go into. I put a note in TargetDecision that I think is a good spot, ctrlf "Nolan TODO" to find it)
+4. The launch file will need to be re-setup with the right functions (created still_turtles.launch.xml. I'm unsure if catcher_node is needed)

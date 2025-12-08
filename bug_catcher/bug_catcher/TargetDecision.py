@@ -43,6 +43,7 @@ from bug_catcher.sort import Sort
 from bug_catcher.vision import Vision
 
 from bug_catcher_interfaces.msg import BugArray, BugInfo, BasePoseArray, BasePose
+from bug_catcher_interfaces.srv import Pick
 
 import cv2
 
@@ -248,6 +249,12 @@ class TargetDecision(Node):
         # Store the latest sky target seen for wrist cam use
         self.latest_sky_target = None
         self.last_sky_update_time = self.get_clock().now()
+
+        # This service client is used for the fallback of picking up still bugs
+        service_cb_group = MutuallyExclusiveCallbackGroup()
+        self.pick_client = self.create_client(Pick, 'pick', callback_group=service_cb_group)
+        if not self.pick_client.wait_for_service(timeout_sec=5.0):
+            raise RuntimeError('Failed to find Pick service')
 
         self.get_logger().info(f'Node started. Current Target: [{self.target_color}]')
 
@@ -942,7 +949,7 @@ class TargetDecision(Node):
                             dy = pose_base.position.y - gripper_pos_base.y
                             dist = dx**2 + dy**2
                         else:
-                            dist = 10       # Set it far away when target is switched
+                            dist = 10  # Set it far away when target is switched
 
                             if dist < closest_dist:
                                 closest_dist = dist
@@ -1025,7 +1032,9 @@ class TargetDecision(Node):
                 # Loop through colors and if it returns a position, then switch the target.
                 switch_debug_frame = switch_frame.copy()
                 for color_name in self.sky_cam_vision.colors.keys():
-                    detections, _, _ = self.sky_cam_vision.detect_objects(switch_debug_frame, color_name)
+                    detections, _, _ = self.sky_cam_vision.detect_objects(
+                        switch_debug_frame, color_name
+                    )
                     # If a color is detected publish that color to the topic:
                     if len(detections) != 0:
                         self.target_switch_pub.publish(String(data=color_name))
@@ -1095,7 +1104,12 @@ class TargetDecision(Node):
                     final_target.pose.header.stamp = msg.header.stamp  # Update timestamp
                     source = 'WRIST_CAM'
 
+                    # Nolan TODO: Does this node know where the bases are? Uncomment and fix the
+                    # next line.
+
+                    # success = await self.pick_client.call_async(Pick(bug=target_bug,base=base_info))
                     self.wrist_target_pub.publish(target_bug)
+
                     # print(target_bug)
 
                     cv2.putText(

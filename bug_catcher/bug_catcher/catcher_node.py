@@ -102,7 +102,9 @@ class CatcherNode(Node):
 
         # PUBLISHERS:
         markerQoS = QoSProfile(depth=10, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
-        self.marker_pub = self.create_publisher(MarkerArray, '/visualization_marker_array', markerQoS)
+        self.marker_pub = self.create_publisher(
+            MarkerArray, '/visualization_marker_array', markerQoS
+        )
         self.planscene = self.create_publisher(PlanningScene, '/planning_scene', 10)
 
         # Establish the required connections and trackers for updating the planningscene each call.
