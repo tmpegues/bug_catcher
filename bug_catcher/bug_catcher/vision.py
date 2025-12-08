@@ -150,13 +150,13 @@ class Vision:
                 max_area = area
                 largest_contour = cnt
 
-        # after finding the largest contour, we find the permissible contours
-        max_area = cv2.contourArea(largest_contour)
         if largest_contour is not None:
+            # after finding the largest contour, we find the permissible contours
+            maximum_area = cv2.contourArea(largest_contour)
             for cnt in contours:
                 area = cv2.contourArea(cnt)
                 # Check if the contour is similar in size to the largest contour
-                if abs(area - max_area) <= 50:
+                if abs(area - maximum_area) <= 50:
                     permissible_contour.append(cnt)
 
         # If a valid contour is found, draw it on the display frame

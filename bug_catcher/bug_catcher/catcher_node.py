@@ -91,21 +91,9 @@ class CatcherNode(Node):
         # Load static scene objects (table, walls, etc.)
         self.mpi.ps.load_scene(filename)
 
-        # 3. Drop-off Configuration (Color -> [x, y, z])
-        # TODO: Adjust these coordinates based on ACTUAL SETUP
-        self.drop_locations = {
-            'red': [0.3, 0.4, 0.3],
-            'blue': [0.3, -0.4, 0.3],
-            'green': [0.4, 0.4, 0.3],
-            'pink': [0.4, -0.4, 0.3],
-            'orange': [0.5, 0.0, 0.3],
-            'purple': [0.6, 0.0, 0.3],
-            'default': [0.3, 0.0, 0.3],  # Fallback
-        }
-
         # Subscription for the bug tracking info:
         self.bug_sub = self.create_subscription(
-            BugArray, '/bug_god/bug_array', self.bug_callback, 10
+            BugArray, '/bug_god/bug_array', self._publish_markers, 10
         )
         # Subscription to gather and store the poses of the drop locations:
         self.drop_sub = self.create_subscription(
@@ -114,7 +102,7 @@ class CatcherNode(Node):
 
         # PUBLISHERS:
         markerQoS = QoSProfile(depth=10, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
-        self.mark_pub = self.create_publisher(MarkerArray, 'visualization_marker_array', markerQoS)
+        self.marker_pub = self.create_publisher(MarkerArray, 'visualization_marker_array', markerQoS)
         self.planscene = self.create_publisher(PlanningScene, '/planning_scene', 10)
 
         # Establish the required connections and trackers for updating the planningscene each call.
@@ -126,8 +114,6 @@ class CatcherNode(Node):
 
         self.get_logger().info('Catcher Node: Ready. Listening to /wrist_camera/target_bug...')
 
-    def setup_bug_listener(self):
-        """Set up subscriber for the Wrist Camera pose data."""
         # 4. State Machine Variables
         self.state = State.IDLE
         self.current_target_info = None  # Stores the BugInfo of the active target
@@ -149,17 +135,17 @@ class CatcherNode(Node):
             callback_group=cb_group,
         )
 
-        # Sky Camera (The Observer)
-        self.sky_sub = self.create_subscription(
-            BugArray, '/bug_god/bug_array', self.sky_observer_callback, 10
-        )
+        # # Sky Camera (The Observer)
+        # self.sky_sub = self.create_subscription(
+        #     BugArray, '/bug_god/bug_array', self.sky_observer_callback, 10
+        # )
 
-        # Visualization Publishers
-        markerQoS = QoSProfile(depth=10, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
-        self.marker_pub = self.create_publisher(
-            MarkerArray, 'visualization_marker_array', markerQoS
-        )
-        self.scene_pub = self.create_publisher(PlanningScene, '/planning_scene', 10)
+        # # Visualization Publishers
+        # markerQoS = QoSProfile(depth=10, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
+        # self.marker_pub = self.create_publisher(
+        #     MarkerArray, 'visualization_marker_array', markerQoS
+        # )
+        # self.scene_pub = self.create_publisher(PlanningScene, '/planning_scene', 10)
 
         # Load new gripper TCP frame
         self.new_TCP()
@@ -294,17 +280,17 @@ class CatcherNode(Node):
 
                 self.state = State.STALKING
 
-    def sky_observer_callback(self, msg):
-        """Maintains global awareness: updates inventory counts and RViz markers."""
-        # Update Inventory Counts
-        temp_counts = {}
-        for bug in msg.bugs:
-            c = bug.color
-            temp_counts[c] = temp_counts.get(c, 0) + 1
-        self.inventory_counts = temp_counts
+    # def sky_observer_callback(self, msg):
+    #     """Maintains global awareness: updates inventory counts and RViz markers."""
+    #     # Update Inventory Counts
+    #     temp_counts = {}
+    #     for bug in msg.bugs:
+    #         c = bug.color
+    #         temp_counts[c] = temp_counts.get(c, 0) + 1
+    #     self.inventory_counts = temp_counts
 
-        # Visualize Scene in RViz
-        self._publish_markers(msg)
+    #     # Visualize Scene in RViz
+    #     self._publish_markers(msg)
 
     # =========================================================================
     # Main Control Loop (State Machine)

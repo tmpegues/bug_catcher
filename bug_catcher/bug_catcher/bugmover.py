@@ -64,7 +64,7 @@ class BugMover:
             self.node.mpi.rs.get_ee_pose(frame=ee_frame)[1],  # TMP TODO: update frame
         )
         success = False
-        self.node.get_logger().info(f'Stalking: {dist_to_bug - self.ee_cup_tot_offset}')
+        self.node.get_logger().debug(f'Stalking: {dist_to_bug - self.ee_cup_tot_offset}')
 
         goal_pose = Pose(orientation=buginfo_msg.pose.pose.orientation)
         goal_pose.position.x = buginfo_msg.pose.pose.position.x + self.ee_cup_x_offset
@@ -72,17 +72,17 @@ class BugMover:
         goal_pose.position.z = buginfo_msg.pose.pose.position.z + self.ee_cup_z_offset
         # While far from the bug, keep moving and do not close the gripper
         if dist_to_bug > 0.10 + self.ee_cup_tot_offset:  # Raise the goal pose if far from the bug
-            self.node.get_logger().info('Stalking: Big')
+            self.node.get_logger().debug('Stalking: Big')
 
             goal_pose.position.z += 0.05
         elif dist_to_bug > 0.01 + self.ee_cup_tot_offset:  # If close, lower the gripper
-            self.node.get_logger().info('Stalking: Mid')
+            self.node.get_logger().debug('Stalking: Mid')
         elif dist_to_bug < 0.01 + self.ee_cup_tot_offset:  # If really close, close the gripper
-            self.node.get_logger().info('Stalking: Small')
+            self.node.get_logger().debug('Stalking: Small')
             return await self.node.mpi.GripBug()
 
-        self.node.get_logger().info(f'Stalking: goal {goal_pose.position.z}')
-        self.node.get_logger().info(f'Stalking: bug {buginfo_msg.pose.pose.position.z}')
+        self.node.get_logger().debug(f'Stalking: goal {goal_pose.position.z}')
+        self.node.get_logger().debug(f'Stalking: bug {buginfo_msg.pose.pose.position.z}')
 
         if type(self.last_waypoints) is bool:
             start_pose = self.node.mpi.rs.get_ee_pose(frame=ee_frame)[1]

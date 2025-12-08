@@ -266,7 +266,7 @@ class MotionPlanningInterface:
         # 1: check cartesian
 
         success, plan = await self.mp.plan_cartesian_path(waypoints=poses, user_speed=user_speed)
-        self.node.get_logger().info(f'Stalking: {success}, {cart_only}')
+        self.node.get_logger().debug(f'Stalking: {success}, {cart_only}')
         # 2: if Cartesian failed and cart_only isn't set, check RRT
         if cart_only and (not success or plan is None):
             self.node.get_logger().warn('Plan failed at stage: Cartesian. Not Attempting RRT.')
@@ -280,7 +280,7 @@ class MotionPlanningInterface:
         # 3: If we get to this point, then we have a plan. Execute it.
         if success:
             if first_traj_point:
-                self.node.get_logger().info(f'traj_point {first_traj_point}')
+                self.node.get_logger().debug(f'traj_point {first_traj_point}')
                 calc_first_point = first_traj_point
                 calc_first_point.time_from_start = plan.joint_trajectory.points[0].time_from_start
                 plan.joint_trajectory.points[0] = first_traj_point
