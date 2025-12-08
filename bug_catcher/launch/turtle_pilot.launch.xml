@@ -6,13 +6,10 @@
         <arg  name ="robot_ip" value="panda0.robot"/>
     </include>
 
-    <node pkg="bug_catcher" exec="pick_node">
+    <node pkg="bug_catcher" exec="turtle_pilot">
         <param name="filename" value="$(find-pkg-share bug_catcher)/config/objects.yaml"/>
     </node>
-    <node pkg="bug_catcher" exec="turtle_sim_adjuster"/>
-    <!-- <node pkg="turtlesim" exec="turtlesim_node">
-        <param name="holonomic" value="True"/> -->
-    <!-- </node> -->
 
+    <node pkg="bug_catcher" exec="turtle_sim_adjuster"/>
 
 </launch>
