@@ -101,7 +101,7 @@ class SorterNode(Node):
             'yellow': None,
             'orange': None,
             'pink': None,
-            'purple': None
+            'purple': None,
         }
         # Keep track of the current target pose:
         self.target_pose = None
@@ -307,7 +307,9 @@ class SorterNode(Node):
             # Moves the object to the other side of the obstacle
             if response.success:
                 # response.success = await self.mpi.MoveToGoal()
-                response.success = await self.mpi.MoveAboveObject(self.drop_locs[request.color.data].position)
+                response.success = await self.mpi.MoveAboveObject(
+                    self.drop_locs[request.color.data].position
+                )
 
             # Releases the object and detaches the rectangle
             if response.success:

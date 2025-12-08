@@ -38,7 +38,7 @@ from bug_catcher.sort import Sort
 from bug_catcher.vision import Vision
 
 from bug_catcher_interfaces.msg import BugArray, BugInfo, BasePoseArray, BasePose
-#from bug_catcher_interfaces.srv import Sort
+# from bug_catcher_interfaces.srv import Sort
 
 import cv2
 
@@ -1006,7 +1006,9 @@ class TargetDecision(Node):
                             # Transform to Base Frame
                             pose_base = self.apply_transform(pose_cam, transform_stamped)
 
-                            correct_pose_stamped = self._create_pose_stamped(pose_base, msg.header.stamp)
+                            correct_pose_stamped = self._create_pose_stamped(
+                                pose_base, msg.header.stamp
+                            )
 
                             target_bug = BugInfo()
                             target_bug.id = int(obj_id)
