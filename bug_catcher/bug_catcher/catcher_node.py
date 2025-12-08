@@ -242,7 +242,7 @@ class CatcherNode(Node):
                 marker.scale.y = 0.03
                 marker.scale.z = 0.03
                 marker.lifetime.sec = 0
-                marker.lifetime.nanosec = 20000000
+                marker.lifetime.nanosec = 40000000
                 markers.append(marker)
 
                 # Assign a specific id to each marker based on color identity and color:
@@ -381,7 +381,7 @@ class CatcherNode(Node):
                 pass
 
             elif self.state == State.STALKING:
-                if (self.get_clock().now() - self.last_traj_time) > Duration(seconds=0.01):
+                if (self.get_clock().now() - self.last_traj_time) > Duration(seconds=0.3):
                     if self.current_target_info:
                         target_to_send = self.current_target_info
                         # target_to_send.pose.pose.position.x += OFFSET_X
