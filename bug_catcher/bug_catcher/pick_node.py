@@ -13,18 +13,16 @@ This class uses the Motion planning interface to perform the following tasks:
 """
 
 from bug_catcher.motionplanninginterface import MotionPlanningInterface
-from bug_catcher_interfaces.msg import BugInfo
 from bug_catcher_interfaces.srv import Pick
 from bug_catcher.bugmover import BugMover
 from bug_catcher import bug as bug
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.node import Node
-from rclpy.time import Duration
 
 
 class PickNode(Node):
-    """Node uses the pick service and is also the Node being used to turtle-pilot."""
+    """Node uses the pick service to pick up objects."""
 
     def __init__(self):
         """Initialize the PickNode."""
@@ -47,28 +45,9 @@ class PickNode(Node):
 
         self.bm = BugMover(self)
 
-        self.bug_sub = self.create_subscription(BugInfo, 'bug_info', self.info_cb, 10)
-
         self.last_traj_time = self.get_clock().now()
 
         self.get_logger().info('PickNode initialized and ready to receive pick requests.')
-
-    async def info_cb(self, bug_msg):
-        """
-        Receive BugInfo messages and stalk the bug received.
-
-        Args:
-        ----
-        bug_msg (BugInfo): The BugInfo message corresponding to the target bug._
-
-        """
-        await self.mpi.OpenGripper()
-        if (self.get_clock().now() - self.last_traj_time) > Duration(seconds=0.3):
-            self.get_logger().debug(
-                f'{bug_msg.pose.pose.position} TMP (pick_node): info cb in pick_node triggered: '
-            )
-            await self.bm.stalking_pick(bug_msg)
-            self.last_traj_time = self.get_clock().now()
 
     # Call the gripper to go pick up the object:
     async def pick_callback(self, request, response):
