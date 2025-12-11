@@ -31,6 +31,8 @@ from bug_catcher_interfaces.msg import BugArray, BugInfo, BasePoseArray
 
 from bug_catcher_interfaces.srv import Sort
 
+from geometry_msgs.msg import Quaternion
+
 from moveit_msgs.msg import PlanningScene
 
 import rclpy
@@ -75,7 +77,7 @@ class SorterNode(Node):
             BasePoseArray, 'drop_locs', self.drop_callback, 10
         )
         self.targ_sub = self.create_subscription(
-            BugInfo, 'bug_god/target_bug', self.target_callback, 10, callback_group=lockout_group
+            BugInfo, 'bug_god/target_bug', self.target_callback, 1
         )
 
         # PUBLISHERS:
@@ -84,7 +86,6 @@ class SorterNode(Node):
             MarkerArray, '/visualization_marker_array', markerQoS
         )
         self.planscene = self.create_publisher(PlanningScene, '/planning_scene', 10)
-
 
         # SERVICES:
         self.sort_service = self.create_service(
@@ -263,29 +264,33 @@ class SorterNode(Node):
         # Break apart the message and store the color and pose in a dictionary:
         for drop_pose in drop_msg.base_poses:
             self.drop_locs[drop_pose.color] = drop_pose.pose
+            self.drop_locs[drop_pose.color].position.z += 0.03  # TODO: Check ee actual offset
 
-    async def target_callback(self, target_msg):
+    def target_callback(self, target_msg):
         """Update and set the current target position to catch."""
         # Recieves a BugInfo msg:
+        self.current_target_color = target_msg.color
+        self.get_logger().info(f'Current target color is: {self.current_target_color}')
         self.target_pose = target_msg.pose.pose
-        self.target_pose.position.z = self.grasp_z
+        self.target_pose.position.x = target_msg.pose.pose.position.x + 0.015  # Centering Offset
+        self.target_pose.position.z = 0.025
 
     # Will continue to sort a color until that color has been fully sorted out of the arena.
     async def sort_callback(self, request, response):
         """Commands the gripper to go retrieve and move the object."""
         self.get_logger().info(f'Received sort for {request.color}')
+        self.current_target_color = request.color
         # Flip this value to turn off all downstream plans and executions.
         response.success = True
 
-        locked_pose = self.target_pose
-        locked_pose.position.z += .09
-        # Publish the change in the
-
         # Continue the pickup process until there are no bugs of that color left:
         while self.numbugs[request.color.data] > 0:
+            locked_pose = self.target_pose
+            self.get_logger().info(f'target pose {self.target_pose}')
+            # TODO: Check ee actual offset
+            locked_pose.orientation = Quaternion(x=1, w=0)
             # Initialize the robot at the Home Position:
             # TODO: Have it aim the end eff up so we can see all the bugs.
-            response.success = await self.mpi.GetReady()
 
             # Begin the Commands to retrieve the objext:
             # Move the arm directly above the object:
@@ -294,27 +299,31 @@ class SorterNode(Node):
 
             # Opens the gripper
             if response.success:
-                response.success = await self.mpi.OpenGripper()
+                response.success = await self.mpi.OpenGripper(0.04)
 
             # Moves directly downwards until the object is between the grippers
             if response.success:
+                self.get_logger().info(f'It is here {locked_pose}')
                 response.success = await self.mpi.MoveDownToObject(locked_pose)
 
-            # Closes the grippers and add the target bug on the end effector:
+            # # Closes the grippers and add the target bug on the end effector:
             if response.success:
                 response.success = await self.mpi.CloseGripper('target_bug')
-
+            response.success = True
             # Lifts the object slightly off the table
             if response.success:
                 response.success = await self.mpi.LiftOffTable()
+
+            if response.success:
+                response.success = await self.mpi.GetReady()
 
             # Moves the object to the other side of the obstacle
             if response.success:
                 # response.success = await self.mpi.MoveToGoal()
                 response.success = await self.mpi.MoveAboveObject(
-                    self.drop_locs[request.color.data].position
+                    self.drop_locs[self.current_target_color].position
                 )
-                self.get_logger().info(f'{self.drop_locs[request.color.data].position}')
+                self.get_logger().info(f'{self.drop_locs[self.current_target_color].position}')
 
             # Releases the object and detaches the rectangle
             if response.success:
@@ -324,8 +333,10 @@ class SorterNode(Node):
             if response.success:
                 response.success = await self.mpi.GetReady()
 
-        self.get_logger.info(f'All {request.color} bugs are caught! \
-                              Send another service to restart sorting!')
+        self.get_logger.info(
+            f'All {request.color} bugs are caught! \
+                              Send another service to restart sorting!'
+        )
         return response
 
 

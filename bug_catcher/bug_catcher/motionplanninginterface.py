@@ -95,9 +95,9 @@ class MotionPlanningInterface:
 
         return True
 
-    async def OpenGripper(self):
+    async def OpenGripper(self, width=0.03):
         """Open the grippers of the end effector on the robot."""
-        gripper = await self.mp.open_gripper()
+        gripper = await self.mp.open_gripper(width)
         if not gripper:
             self.node.get_logger().warn('Gripper failed at stage: open-gripper before pick')
             return False
@@ -128,8 +128,8 @@ class MotionPlanningInterface:
     async def CloseGripper(self, obj_name):
         """Close the gripper and attaches a block to the end-effector."""
         # We will attach the block to the end effector:
-        self.ps.attach_obstacle(obj_name)
-        gripper = await self.mp.close_gripper()
+        # self.ps.attach_obstacle(obj_name)
+        gripper = await self.mp.close_gripper(0.01)
         if not gripper:
             self.node.get_logger().warn(
                 'Gripper failed at stage: \
@@ -195,10 +195,10 @@ class MotionPlanningInterface:
     # Open gripper:
     async def ReleaseObject(self, obj_name):
         """Release the object and detaches the object in Rviz."""
-        self.ps.detach_obstacle(obj_name)
+        # self.ps.detach_obstacle(obj_name)
         gripper = await self.mp.open_gripper()
         if not gripper:
-            self.logger.warn('Gripper failed at stage: open-gripper at goal')
+            self.get_logger.warn('Gripper failed at stage: open-gripper at goal')
             return False
         self.node.get_logger().info('gripper opened and the goal completed!')
 

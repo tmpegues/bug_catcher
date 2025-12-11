@@ -796,11 +796,11 @@ class TargetDecision(Node):
                     X_L, Y_L, Z_L = t_left.x, t_left.y, t_left.z
                     X_R, Y_R, Z_R = t_right.x, t_right.y, t_right.z
                     # Left Tag location:
-                    u_L = int(fx * (X_L / Z_L) + cx)
-                    v_L = int(fy * (Y_L / Z_L) + cy)
+                    u_L = int(fx * (X_L / Z_L) + cx) - 50
+                    v_L = int(fy * (Y_L / Z_L) + cy) - 50
                     # Right Tag Location:
-                    u_R = int(fx * (X_R / Z_R) + cx)
-                    v_R = int(fy * (Y_R / Z_R) + cy)
+                    u_R = int(fx * (X_R / Z_R) + cx) + 50
+                    v_R = int(fy * (Y_R / Z_R) + cy) + 50
 
                     # Draw the mask to be within the tags:
                     cv2.rectangle(world_mask, (u_L, v_L), (u_R, v_R), 255, -1)
@@ -900,6 +900,8 @@ class TargetDecision(Node):
                                 closest_dist = dist
                                 target_bug_index = len(all_detected_bugs)
                                 bug_info.target = True
+                                # Publish the target bug:
+                                self.sky_target_pub.publish(bug_info)
 
                         all_detected_bugs.append(bug_info)
 
@@ -965,11 +967,11 @@ class TargetDecision(Node):
                 X_L, Y_L, Z_L = x, y, z
                 X_R, Y_R, Z_R = x, y, z
                 # Left Tag location:
-                u_L = int(fx * (X_L / Z_L) + cx) - 30
-                v_L = int(fy * (Y_L / Z_L) + cy) - 30
+                u_L = int(fx * (X_L / Z_L) + cx) - 40
+                v_L = int(fy * (Y_L / Z_L) + cy) - 40
                 # Right Tag Location:
-                u_R = int(fx * (X_R / Z_R) + cx) + 30
-                v_R = int(fy * (Y_R / Z_R) + cy) + 30
+                u_R = int(fx * (X_R / Z_R) + cx) + 40
+                v_R = int(fy * (Y_R / Z_R) + cy) + 40
 
                 # Draw the mask to be within the tags:
                 cv2.rectangle(self.switch_mask, (u_L, v_L), (u_R, v_R), 255, -1)
@@ -988,44 +990,81 @@ class TargetDecision(Node):
                     self.bridge.cv2_to_imgmsg(switch_debug_frame, encoding='bgr8')
                 )
 
-                # Mask just the target color and publish the location of the target bug:
-                frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-                mask = np.zeros(frame.shape[:2], dtype='uint8')
-                detections, _, mask = self.sky_cam_vision.detect_objects(frame, self.target_color)
-                results, final_debug_frame = self.sky_cam_vision.update_tracker(detections, frame)
+                # # Mask just the target color and publish the location of the target bug:
+                # frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+                # mask = np.zeros(frame.shape[:2], dtype='uint8')
+                # detections, _, mask = self.sky_cam_vision.detect_objects(frame, self.target_color)
+                # results, final_debug_frame = self.sky_cam_vision.update_tracker(detections, frame)
 
-                final_target = None
-                # Assume the target closest to the end effector is the target:
-                if len(results) > 0:
-                    obj_id, u, v = results[0]
+                # final_target = None
+                # # Assume the target closest to the end effector is the target:
+                # if len(results) > 0:
+                #     obj_id, u, v = results[0]
 
-                    pose_cam = self._pixel_to_pose(u, v, self.sky_intrinsics, cam_height)
+                #     pose_cam = self._pixel_to_pose(u, v, self.sky_intrinsics, cam_height)
 
-                    if transform_stamped:
-                        try:
-                            # Transform to Base Frame
-                            pose_base = self.apply_transform(pose_cam, transform_stamped)
+                #     if transform_stamped:
+                #         try:
+                #             # Transform to Base Frame
+                #             pose_base = self.apply_transform(pose_cam, transform_stamped)
 
-                            correct_pose_stamped = self._create_pose_stamped(
-                                pose_base, msg.header.stamp
-                            )
+                #             correct_pose_stamped = self._create_pose_stamped(
+                #                 pose_base, msg.header.stamp
+                #             )
 
-                            target_bug = BugInfo()
-                            target_bug.id = int(obj_id)
-                            target_bug.color = self.target_color
-                            target_bug.target = True
-                            target_bug.pose = correct_pose_stamped
+                #             target_bug = BugInfo()
+                #             target_bug.id = int(obj_id)
+                #             target_bug.color = self.target_color
+                #             target_bug.target = True
+                #             target_bug.pose = correct_pose_stamped
 
-                            final_target = target_bug
-                            final_target.pose.header.stamp = msg.header.stamp  # Update timestamp
+                #             final_target = target_bug
+                #             final_target.pose.header.stamp = msg.header.stamp  # Update timestamp
 
-                            self.sky_target_pub.publish(target_bug)
-                        except (
-                            tf2_ros.LookupException,
-                            tf2_ros.ExtrapolationException,
-                            tf2_ros.ConnectivityException,
-                        ) as e:
-                            self.get_logger().info(f'Transform  lookup failed: {e}')
+                #             self.sky_target_pub.publish(target_bug)
+                #         except (
+                #             tf2_ros.LookupException,
+                #             tf2_ros.ExtrapolationException,
+                #             tf2_ros.ConnectivityExce                # # Mask just the target color and publish the location of the target bug:
+                # frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+                # mask = np.zeros(frame.shape[:2], dtype='uint8')
+                # detections, _, mask = self.sky_cam_vision.detect_objects(frame, self.target_color)
+                # results, final_debug_frame = self.sky_cam_vision.update_tracker(detections, frame)
+
+                # final_target = None
+                # # Assume the target closest to the end effector is the target:
+                # if len(results) > 0:
+                #     obj_id, u, v = results[0]
+
+                #     pose_cam = self._pixel_to_pose(u, v, self.sky_intrinsics, cam_height)
+
+                #     if transform_stamped:
+                #         try:
+                #             # Transform to Base Frame
+                #             pose_base = self.apply_transform(pose_cam, transform_stamped)
+
+                #             correct_pose_stamped = self._create_pose_stamped(
+                #                 pose_base, msg.header.stamp
+                #             )
+
+                #             target_bug = BugInfo()
+                #             target_bug.id = int(obj_id)
+                #             target_bug.color = self.target_color
+                #             target_bug.target = True
+                #             target_bug.pose = correct_pose_stamped
+
+                #             final_target = target_bug
+                #             final_target.pose.header.stamp = msg.header.stamp  # Update timestamp
+
+                #             self.sky_target_pub.publish(target_bug)
+                #         except (
+                #             tf2_ros.LookupException,
+                #             tf2_ros.ExtrapolationException,
+                #             tf2_ros.ConnectivityException,
+                #         ) as e:
+                #             self.get_logger().info(f'Transform  lookup failed: {e}')ption,
+                #         ) as e:
+                #             self.get_logger().info(f'Transform  lookup failed: {e}')
 
 
 def main(args=None):

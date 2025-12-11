@@ -213,10 +213,10 @@ class MotionPlanner:
         request.allowed_planning_time = 5.0
         request.num_planning_attempts = 10
         request.workspace_parameters.header.frame_id = 'base'
-        request.max_acceleration_scaling_factor = 0.03
-        request.max_velocity_scaling_factor = 0.03
+        request.max_acceleration_scaling_factor = 0.1
+        request.max_velocity_scaling_factor = 0.1
         request.cartesian_speed_limited_link = 'fer_hand_tcp'
-        request.max_cartesian_speed = 0.05
+        request.max_cartesian_speed = 0.1
 
         if start_config:
             # Provided starting joint configuration
@@ -456,9 +456,9 @@ class MotionPlanner:
             constraints.orientation_constraints.append(oc)
 
         request.goal_constraints.append(constraints)
-        request.max_acceleration_scaling_factor = 0.1
-        request.max_velocity_scaling_factor = 0.1
-        request.max_cartesian_speed = 0.05
+        request.max_acceleration_scaling_factor = 0.12
+        request.max_velocity_scaling_factor = 0.17
+        request.max_cartesian_speed = 0.17
 
         ##################### Begin_Citation [4] ################## # noqa: E26
         # This constraint prevents the "joint out of limits" ERROR
@@ -568,13 +568,13 @@ class MotionPlanner:
         ##################### End_Citation [4] #################### # noqa: E26
 
         if user_speed == 0.0:
-            request.max_acceleration_scaling_factor = 0.03
-            request.max_velocity_scaling_factor = 0.03
-            request.max_cartesian_speed = 0.03
+            request.max_acceleration_scaling_factor = 0.1
+            request.max_velocity_scaling_factor = 0.1
+            request.max_cartesian_speed = 0.1
         else:
             request.max_acceleration_scaling_factor = 0.1
             request.max_velocity_scaling_factor = user_speed
-            request.max_cartesian_speed = 0.05
+            request.max_cartesian_speed = 0.1
 
         future = self.cartesian_client.call_async(request)
         response = await future
