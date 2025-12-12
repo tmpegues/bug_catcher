@@ -251,18 +251,13 @@ class SorterNode(Node):
         marker_array.markers = markers
         self.marker_pub.publish(marker_array)
 
-    def drop_callback(self, drop_msg):
+    def drop_callback(self, drop_msg: BasePoseArray):
         """
         Update base drop locations for each color bug.
 
-        Args
+        Args:
         ----
-            drop_msg:
-                A dict of color base locations:
-                - color : str
-                    The bug's color label (e.g., 'pink', 'blue', ...).
-                - pose : geometry_msgs/PoseStamped
-                The estimated pose of the bug in the camera/base frame.
+        drop_msg (BasePoseArray): Message containing the locations of the bases for each color bug.
 
         """
         # Break apart the message and store the color and pose in a dictionary:
@@ -294,8 +289,10 @@ class SorterNode(Node):
 
         # Continue the pickup process until there are no bugs of that color left:
         while any(count > 0 for count in self.numbugs.values()):
-            self.get_logger().info('The But Catcher will continue to responde to the pedestal\
-                                   inputs until there are no bugs left! Have fun!')
+            self.get_logger().info(
+                'The But Catcher will continue to responde to the pedestal\
+                                   inputs until there are no bugs left! Have fun!'
+            )
             # Lock the robot on a turtle:
             locked_pose = self.target_pose
             locked_color = self.current_target_color
@@ -322,7 +319,7 @@ class SorterNode(Node):
             # # Closes the grippers and add the target bug on the end effector:
             if response.success:
                 response.success = await self.mpi.CloseGripper('target_bug')
-            response.success = True    # Overide Gripper FER Error
+            response.success = True  # Overide Gripper FER Error
             # Lifts the object slightly off the table
             if response.success:
                 response.success = await self.mpi.LiftOffTable()
@@ -341,7 +338,7 @@ class SorterNode(Node):
             # Releases the object and detaches the rectangle
             if response.success:
                 response.success = await self.mpi.ReleaseObject('target_bug')
-            response.success = True     # Overide Gripper FER Error
+            response.success = True  # Overide Gripper FER Error
 
             # Return the robot to the Home Position:
             if response.success:

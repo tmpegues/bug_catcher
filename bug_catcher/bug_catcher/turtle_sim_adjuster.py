@@ -1,15 +1,14 @@
 """A node for remapping the turtlesim poses to a usable task space for the bug catcher."""
 
+from bug_catcher_interfaces.msg import BugInfo
+from geometry_msgs.msg import Pose
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Duration
-
-from geometry_msgs.msg import Pose
-from turtlesim_msgs.msg import Pose as TPose
-from bug_catcher_interfaces.msg import BugInfo
 from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
+from turtlesim_msgs.msg import Pose as TPose
 
 
 class TurtleSimAdjuster(Node):

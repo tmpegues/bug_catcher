@@ -25,13 +25,13 @@ Parameters
 """
 
 import asyncio
-from enum import Enum, auto
+from enum import auto, Enum
 
 from bug_catcher.bugmover import BugMover
 from bug_catcher.motionplanninginterface import MotionPlanningInterface
 from bug_catcher.planningscene import Obstacle
 
-from bug_catcher_interfaces.msg import BugArray, BugInfo, BasePoseArray
+from bug_catcher_interfaces.msg import BasePoseArray, BugArray, BugInfo
 
 from geometry_msgs.msg import Pose
 
@@ -294,14 +294,9 @@ class CatcherNode(Node):
         """
         Update base drop locations for each color bug.
 
-        Args
+        Args:
         ----
-            drop_msg:
-                A dict of color base locations:
-                - color : str
-                    The bug's color label (e.g., 'pink', 'blue', ...).
-                - pose : geometry_msgs/PoseStamped
-                The estimated pose of the bug in the camera/base frame.
+        drop_msg (BasePoseArray): Message containing the locations of the bases for each color bug.
 
         """
         # Break apart the message and store the color and pose in a dictionary:

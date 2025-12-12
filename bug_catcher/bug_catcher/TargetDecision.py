@@ -29,8 +29,8 @@ calibration.tags.tag_<i>.y : float
 
 """
 
+from enum import auto, Enum
 import os
-from enum import Enum, auto
 
 from ament_index_python.packages import get_package_share_directory
 
@@ -183,10 +183,9 @@ class TargetDecision(Node):
         self.drop_pub = self.create_publisher(BasePoseArray, 'drop_locs', 10)
 
         # SUBSCRIBERS:
-        self.service_target_sub = self.create_subscription(String,
-                                                           '/service/target_color',
-                                                           self.service_switch_callback,
-                                                           10)
+        self.service_target_sub = self.create_subscription(
+            String, '/service/target_color', self.service_switch_callback, 10
+        )
 
         # ==================================
         # 5. Initial System Integration Setup:

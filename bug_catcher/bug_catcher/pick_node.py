@@ -12,9 +12,9 @@ This class uses the Motion planning interface to perform the following tasks:
     - Releases the object and detaches the rectangle
 """
 
+from bug_catcher.bugmover import BugMover
 from bug_catcher.motionplanninginterface import MotionPlanningInterface
 from bug_catcher_interfaces.srv import Pick
-from bug_catcher.bugmover import BugMover
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.node import Node
