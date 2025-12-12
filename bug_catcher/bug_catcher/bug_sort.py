@@ -41,6 +41,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile
 
 from shape_msgs.msg import SolidPrimitive
+from std_msgs.msg import String
 
 from visualization_msgs.msg import Marker, MarkerArray
 
@@ -75,9 +76,6 @@ class SorterNode(Node):
         self.drop_sub = self.create_subscription(
             BasePoseArray, 'drop_locs', self.drop_callback, 10
         )
-        # self.targ_sub = self.create_subscription(
-        #     BugInfo, 'bug_god/target_bug', self.target_callback, 1
-        # )
 
         # PUBLISHERS:
         markerQoS = QoSProfile(depth=10, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
@@ -85,6 +83,7 @@ class SorterNode(Node):
             MarkerArray, '/visualization_marker_array', markerQoS
         )
         self.planscene = self.create_publisher(PlanningScene, '/planning_scene', 10)
+        self.switch_target_pub = self.create_publisher(String, '/service/target_color', 10)
 
         # SERVICES:
         self.sort_service = self.create_service(
@@ -191,7 +190,7 @@ class SorterNode(Node):
                 self.get_logger().info(f'Current target color is: {self.current_target_color}')
                 self.target_pose = bug.pose.pose
                 self.target_pose.position.x = bug.pose.pose.position.x + 0.015  # Centering Offset
-                self.target_pose.position.z = 0.03
+                self.target_pose.position.z = 0.025
             else:
                 # The bug is not a current target, just track it as a colored marker and publish.
                 # Set the location of the bug:
@@ -269,34 +268,43 @@ class SorterNode(Node):
         # Break apart the message and store the color and pose in a dictionary:
         for drop_pose in drop_msg.base_poses:
             self.drop_locs[drop_pose.color] = drop_pose.pose
-            self.drop_locs[drop_pose.color].position.z += 0.015  # TODO: Check ee actual offset
-
-    # def target_callback(self, target_msg):
-    #     """Update and set the current target position to catch."""
-    #     # Recieves a BugInfo msg:
-    #     self.current_target_color = target_msg.color
-    #     self.get_logger().info(f'Current target color is: {self.current_target_color}')
-    #     self.target_pose = target_msg.pose.pose
-    #     self.target_pose.position.x = target_msg.pose.pose.position.x + 0.015  # Centering Offset
-    #     self.target_pose.position.z = 0.025
+            self.drop_locs[drop_pose.color].position.z += 0.005
 
     # Will continue to sort a color until that color has been fully sorted out of the arena.
     async def sort_callback(self, request, response):
         """Commands the gripper to go retrieve and move the object."""
         self.get_logger().info(f'Received sort for {request.color}')
-        self.current_target_color = request.color
+        recieved_color = request.color.data
+
+        # publish the new target color
+        msg = String()
+        msg.data = recieved_color
+        self.switch_target_pub.publish(msg)
         # Flip this value to turn off all downstream plans and executions.
         response.success = True
 
-        # Continue the pickup process until there are no bugs of that color left:
-        while self.numbugs[request.color.data] > 0:
-            locked_pose = self.target_pose
-            self.get_logger().info(f'target pose {self.target_pose}')
-            # TODO: Check ee actual offset
-            locked_pose.orientation = Quaternion(x=1, w=0)
-            # Initialize the robot at the Home Position:
-            # TODO: Have it aim the end eff up so we can see all the bugs.
+        self.get_logger().info('Current Target Still updating!')
+        # Initialize System:
+        while self.current_target_color != recieved_color:
+            self.get_logger().info('Current Target Still updating!')
+            if self.numbugs[recieved_color] is None:
+                self.get_logger().info('Current Bug Color is not in the world view!')
+                return response
+            continue
 
+        # Continue the pickup process until there are no bugs of that color left:
+        while any(count > 0 for count in self.numbugs.values()):
+            self.get_logger().info('The But Catcher will continue to responde to the pedestal\
+                                   inputs until there are no bugs left! Have fun!')
+            # Lock the robot on a turtle:
+            locked_pose = self.target_pose
+            locked_color = self.current_target_color
+
+            self.get_logger().info(f'target pose {self.target_pose}')
+            locked_pose.orientation = Quaternion(x=1, w=0)
+
+            # Initialize the robot at the Home Position:
+            response.success = await self.mpi.GetReady()
             # Begin the Commands to retrieve the objext:
             # Move the arm directly above the object:
             if response.success:
@@ -314,7 +322,7 @@ class SorterNode(Node):
             # # Closes the grippers and add the target bug on the end effector:
             if response.success:
                 response.success = await self.mpi.CloseGripper('target_bug')
-            response.success = True
+            response.success = True    # Overide Gripper FER Error
             # Lifts the object slightly off the table
             if response.success:
                 response.success = await self.mpi.LiftOffTable()
@@ -326,13 +334,14 @@ class SorterNode(Node):
             if response.success:
                 # response.success = await self.mpi.MoveToGoal()
                 response.success = await self.mpi.MoveAboveObject(
-                    self.drop_locs[self.current_target_color].position
+                    self.drop_locs[locked_color].position
                 )
-                self.get_logger().info(f'{self.drop_locs[self.current_target_color].position}')
+                self.get_logger().info(f'{self.drop_locs[locked_color].position}')
 
             # Releases the object and detaches the rectangle
             if response.success:
                 response.success = await self.mpi.ReleaseObject('target_bug')
+            response.success = True     # Overide Gripper FER Error
 
             # Return the robot to the Home Position:
             if response.success:

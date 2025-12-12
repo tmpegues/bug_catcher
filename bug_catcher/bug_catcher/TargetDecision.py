@@ -179,17 +179,14 @@ class TargetDecision(Node):
         self.sky_mask_pub = self.create_publisher(Image, '/bug_god/mask_view', 10)
         self.target_switch_pub = self.create_publisher(String, '/target_color', 10)
         self.switch_debug_pub = self.create_publisher(Image, '/bug_god/switch_view', 10)
-        # # Create a publisher for the target bug:
-        # self.sky_target_pub = self.create_publisher(BugInfo, '/bug_god/target_bug', 10)
         # Create a publisher for the drop locations:
         self.drop_pub = self.create_publisher(BasePoseArray, 'drop_locs', 10)
 
-        # ==================================
-        # 4. Target Color Command Subscriber
-        # ==================================
-        # self.command_sub = self.create_subscription(
-        #     String, '/target_color', self.command_callback, 10
-        # )
+        # SUBSCRIBERS:
+        self.service_target_sub = self.create_subscription(String,
+                                                           '/service/target_color',
+                                                           self.service_switch_callback,
+                                                           10)
 
         # ==================================
         # 5. Initial System Integration Setup:
@@ -226,8 +223,6 @@ class TargetDecision(Node):
         self.calibration_frames = []
         self.max_calibration_frames = 300  # Average over 300 frames (10 seconds)
         self.state = State.INITIALIZING
-
-        self.get_logger().info(f'Node started. Current Target: [{self.target_color}]')
 
         # Set the switch mask to remove detection of color task switcher:
         self.switch_mask = None
@@ -660,31 +655,6 @@ class TargetDecision(Node):
                 pass
                 # All publishing will take place in the image callbacks
 
-    # -----------------------------------------------------------------
-    # Callback Functions
-    # -----------------------------------------------------------------
-    # def command_callback(self, msg):
-    #     """
-    #     Handle commands to switch the active target color.
-
-    #     Args:
-    #     ----
-    #     msg (std_msgs.msg.String): The new target color name (e.g., 'blue').
-
-    #     """
-    #     new_color = msg.data.lower().strip()
-    #     if new_color == self.target_color:
-    #         return
-
-    #     if new_color in self.sky_cam_vision.colors:
-    #         self.get_logger().info(f'Switching Target Color: {self.target_color} -> {new_color}')
-    #         self.target_color = new_color
-    #         self.sky_cam_vision.tracker = Sort(max_age=15, min_hits=3, iou_threshold=0.1)
-    #     else:
-    #         self.get_logger().warn(
-    #             f"Received command '{new_color}', but calibration data not found!"
-    #         )
-
     def sky_info_cb(self, msg):
         """Store Sky Camera intrinsics."""
         if self.sky_intrinsics is None:
@@ -796,11 +766,11 @@ class TargetDecision(Node):
                     X_L, Y_L, Z_L = t_left.x, t_left.y, t_left.z
                     X_R, Y_R, Z_R = t_right.x, t_right.y, t_right.z
                     # Left Tag location:
-                    u_L = int(fx * (X_L / Z_L) + cx) - 50
-                    v_L = int(fy * (Y_L / Z_L) + cy) - 50
+                    u_L = int(fx * (X_L / Z_L) + cx) - 60
+                    v_L = int(fy * (Y_L / Z_L) + cy) - 60
                     # Right Tag Location:
-                    u_R = int(fx * (X_R / Z_R) + cx) + 50
-                    v_R = int(fy * (Y_R / Z_R) + cy) + 50
+                    u_R = int(fx * (X_R / Z_R) + cx) + 60
+                    v_R = int(fy * (Y_R / Z_R) + cy) + 60
 
                     # Draw the mask to be within the tags:
                     cv2.rectangle(world_mask, (u_L, v_L), (u_R, v_R), 255, -1)
@@ -845,11 +815,7 @@ class TargetDecision(Node):
                 # 3. Iterate colors
                 for color_name in self.sky_cam_vision.colors.keys():
                     detections, _, _ = self.sky_cam_vision.detect_objects(frame, color_name)
-                    # results, final_debug_frame = self.sky_cam_vision.update_tracker(
-                    #     detections, final_debug_frame
-                    # )
                     results = []
-
                     for i, det in enumerate(detections):
                         x, y, w, h = cv2.boundingRect(det)
                         u = int(x + w / 2)
@@ -921,8 +887,6 @@ class TargetDecision(Node):
                                 closest_dist = dist
                                 target_bug_index = len(all_detected_bugs)
                                 bug_info.target = True
-                                # # Publish the target bug:
-                                # self.sky_target_pub.publish(bug_info)
 
                         all_detected_bugs.append(bug_info)
 
@@ -1007,9 +971,15 @@ class TargetDecision(Node):
                     # If a color is detected publish that color to the topic:
                     if len(detections) != 0:
                         self.target_switch_pub.publish(String(data=color_name))
+                        self.target_color = color_name
+
                 self.switch_debug_pub.publish(
                     self.bridge.cv2_to_imgmsg(switch_debug_frame, encoding='bgr8')
                 )
+
+    def service_switch_callback(self, switch_msg):
+        """Color Switch Subscription for User Service to start Sort with Different Choice."""
+        self.target_color = switch_msg.data
 
 
 def main(args=None):

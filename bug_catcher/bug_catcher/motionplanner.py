@@ -213,10 +213,10 @@ class MotionPlanner:
         request.allowed_planning_time = 5.0
         request.num_planning_attempts = 10
         request.workspace_parameters.header.frame_id = 'base'
-        request.max_acceleration_scaling_factor = 0.1
-        request.max_velocity_scaling_factor = 0.1
+        request.max_acceleration_scaling_factor = 0.35
+        request.max_velocity_scaling_factor = 0.45
         request.cartesian_speed_limited_link = 'fer_hand_tcp'
-        request.max_cartesian_speed = 0.1
+        request.max_cartesian_speed = 0.4
 
         if start_config:
             # Provided starting joint configuration
