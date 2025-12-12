@@ -2,12 +2,10 @@
 
 import asyncio
 
-from bug_catcher import bug as bug
 from bug_catcher import mover_funcs as mv
 
 from geometry_msgs.msg import Pose
 
-import numpy as np
 
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
@@ -253,50 +251,4 @@ class BugMover:
         # Use the base MotionPlanner close_gripper
         await self.node.mpi.mp.close_gripper()
         self.logger.info('AMBUSH COMPLETE.')
-        return True
-
-    async def interdicting_pick(self, bug: bug.Bug, wrist_cam: bool = False) -> bool:
-        """
-        Pick up the bug by moving to its anticipated future state.
-
-        Args:
-        ----
-        bug (bug.Bug): The bug to interdict and pick up
-        wrist_cam (bool): True if a wrist camera is available and can be used for timing the grasp
-
-        Returns
-        -------
-        success (bool): True if the robot gripper thinks it grasped an object
-
-        """
-        # 1. Future pose is currently 1 second projected in the future. Get the ee there in .75 sec
-        # Do not execute this if a cartesian path is not available.
-        # TMP TODO: figure out how to set the speed of a cartesian trajectory
-        tracking = await self.node.mpi.GoTo(pose=bug.future_pose.pose, cart_only=True)
-
-        # 2. Do not continue if the cartesian path failed
-        if not tracking:
-            return False
-        else:
-            # 3.a Close gripper at the time of the future pose if wrist cam is not available
-            if not wrist_cam:
-                # TMP TODO: How long does it take to close the gripper?
-                while self.node.get_clock.now() < bug.future_pose.header.stamp:
-                    pass
-                self.node.mpi.GripBug()
-            elif wrist_cam:
-                # While the distance from the bug to the ee pose is too large, don't do anything
-                success = False
-                while not success:
-                    ee_pose = self.node.mpi.rs.get_ee_pose()
-                distance = np.linalg.norm(
-                    [
-                        bug.pose.pose.position.x - ee_pose.pose.position.x,
-                        bug.pose.pose.position.y - ee_pose.pose.position.y,
-                    ]
-                )
-                while distance > 0.03:  # 3 cm separation is when we close the grippers
-                    pass
-                # Once the while loop is exited, close immediately
-                self.node.mpi.GripBug()
         return True

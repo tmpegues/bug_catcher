@@ -15,7 +15,6 @@ This class uses the Motion planning interface to perform the following tasks:
 from bug_catcher.motionplanninginterface import MotionPlanningInterface
 from bug_catcher_interfaces.srv import Pick
 from bug_catcher.bugmover import BugMover
-from bug_catcher import bug as bug
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.node import Node
