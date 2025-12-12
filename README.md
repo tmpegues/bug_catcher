@@ -17,11 +17,15 @@ to the other side of the table.
 3. Here is a video of the robot performing the task in Rviz. This shows how the robot plans to execute each sort operation. The next target bug can be seen being updated during the current pick and sort operation.
 
 
-https://github.com/user-attachments/assets/6406dbfb-3fd3-4159-881c-42ce356add79
+
+https://github.com/user-attachments/assets/768fe2d5-4c71-45b3-9d08-a049a677f79a
+
 
 
 4. Here is a video of the robot performing the task in the real world!:
 
+
+https://github.com/user-attachments/assets/963e9978-1bb0-489e-bfe0-06c6158e065a
 
 
 5. If you would like to create and rosdoc2 API Documentation for this package:
