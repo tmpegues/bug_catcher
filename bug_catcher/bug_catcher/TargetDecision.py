@@ -34,10 +34,10 @@ from enum import Enum, auto
 
 from ament_index_python.packages import get_package_share_directory
 
-from bug_catcher.sort import Sort
+# from bug_catcher.sort import Sort
 from bug_catcher.vision import Vision
 
-from bug_catcher_interfaces.msg import BugArray, BugInfo, BasePoseArray, BasePose
+from bug_catcher_interfaces.msg import BasePose, BasePoseArray, BugArray, BugInfo
 # from bug_catcher_interfaces.srv import Sort
 
 import cv2
@@ -179,17 +179,17 @@ class TargetDecision(Node):
         self.sky_mask_pub = self.create_publisher(Image, '/bug_god/mask_view', 10)
         self.target_switch_pub = self.create_publisher(String, '/target_color', 10)
         self.switch_debug_pub = self.create_publisher(Image, '/bug_god/switch_view', 10)
-        # Create a publisher for the target bug:
-        self.sky_target_pub = self.create_publisher(BugInfo, '/bug_god/target_bug', 10)
+        # # Create a publisher for the target bug:
+        # self.sky_target_pub = self.create_publisher(BugInfo, '/bug_god/target_bug', 10)
         # Create a publisher for the drop locations:
         self.drop_pub = self.create_publisher(BasePoseArray, 'drop_locs', 10)
 
         # ==================================
         # 4. Target Color Command Subscriber
         # ==================================
-        self.command_sub = self.create_subscription(
-            String, '/target_color', self.command_callback, 10
-        )
+        # self.command_sub = self.create_subscription(
+        #     String, '/target_color', self.command_callback, 10
+        # )
 
         # ==================================
         # 5. Initial System Integration Setup:
@@ -663,27 +663,27 @@ class TargetDecision(Node):
     # -----------------------------------------------------------------
     # Callback Functions
     # -----------------------------------------------------------------
-    def command_callback(self, msg):
-        """
-        Handle commands to switch the active target color.
+    # def command_callback(self, msg):
+    #     """
+    #     Handle commands to switch the active target color.
 
-        Args:
-        ----
-        msg (std_msgs.msg.String): The new target color name (e.g., 'blue').
+    #     Args:
+    #     ----
+    #     msg (std_msgs.msg.String): The new target color name (e.g., 'blue').
 
-        """
-        new_color = msg.data.lower().strip()
-        if new_color == self.target_color:
-            return
+    #     """
+    #     new_color = msg.data.lower().strip()
+    #     if new_color == self.target_color:
+    #         return
 
-        if new_color in self.sky_cam_vision.colors:
-            self.get_logger().info(f'Switching Target Color: {self.target_color} -> {new_color}')
-            self.target_color = new_color
-            self.sky_cam_vision.tracker = Sort(max_age=15, min_hits=3, iou_threshold=0.1)
-        else:
-            self.get_logger().warn(
-                f"Received command '{new_color}', but calibration data not found!"
-            )
+    #     if new_color in self.sky_cam_vision.colors:
+    #         self.get_logger().info(f'Switching Target Color: {self.target_color} -> {new_color}')
+    #         self.target_color = new_color
+    #         self.sky_cam_vision.tracker = Sort(max_age=15, min_hits=3, iou_threshold=0.1)
+    #     else:
+    #         self.get_logger().warn(
+    #             f"Received command '{new_color}', but calibration data not found!"
+    #         )
 
     def sky_info_cb(self, msg):
         """Store Sky Camera intrinsics."""
@@ -845,9 +845,30 @@ class TargetDecision(Node):
                 # 3. Iterate colors
                 for color_name in self.sky_cam_vision.colors.keys():
                     detections, _, _ = self.sky_cam_vision.detect_objects(frame, color_name)
-                    results, final_debug_frame = self.sky_cam_vision.update_tracker(
-                        detections, final_debug_frame
-                    )
+                    # results, final_debug_frame = self.sky_cam_vision.update_tracker(
+                    #     detections, final_debug_frame
+                    # )
+                    results = []
+
+                    for i, det in enumerate(detections):
+                        x, y, w, h = cv2.boundingRect(det)
+                        u = int(x + w / 2)
+                        v = int(y + h / 2)
+
+                        cv2.drawContours(final_debug_frame, [det], -1, (0, 255, 0), 2)
+
+                        cv2.putText(
+                            final_debug_frame,
+                            f'{color_name} {i}',
+                            (x, y - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.5,
+                            (255, 255, 255),
+                            1,
+                        )
+
+                        obj_id = i
+                        results.append((obj_id, u, v))
 
                     for obj_id, u, v in results:
                         # Pixel -> Camera 3D
@@ -900,8 +921,8 @@ class TargetDecision(Node):
                                 closest_dist = dist
                                 target_bug_index = len(all_detected_bugs)
                                 bug_info.target = True
-                                # Publish the target bug:
-                                self.sky_target_pub.publish(bug_info)
+                                # # Publish the target bug:
+                                # self.sky_target_pub.publish(bug_info)
 
                         all_detected_bugs.append(bug_info)
 
@@ -989,82 +1010,6 @@ class TargetDecision(Node):
                 self.switch_debug_pub.publish(
                     self.bridge.cv2_to_imgmsg(switch_debug_frame, encoding='bgr8')
                 )
-
-                # # Mask just the target color and publish the location of the target bug:
-                # frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-                # mask = np.zeros(frame.shape[:2], dtype='uint8')
-                # detections, _, mask = self.sky_cam_vision.detect_objects(frame, self.target_color)
-                # results, final_debug_frame = self.sky_cam_vision.update_tracker(detections, frame)
-
-                # final_target = None
-                # # Assume the target closest to the end effector is the target:
-                # if len(results) > 0:
-                #     obj_id, u, v = results[0]
-
-                #     pose_cam = self._pixel_to_pose(u, v, self.sky_intrinsics, cam_height)
-
-                #     if transform_stamped:
-                #         try:
-                #             # Transform to Base Frame
-                #             pose_base = self.apply_transform(pose_cam, transform_stamped)
-
-                #             correct_pose_stamped = self._create_pose_stamped(
-                #                 pose_base, msg.header.stamp
-                #             )
-
-                #             target_bug = BugInfo()
-                #             target_bug.id = int(obj_id)
-                #             target_bug.color = self.target_color
-                #             target_bug.target = True
-                #             target_bug.pose = correct_pose_stamped
-
-                #             final_target = target_bug
-                #             final_target.pose.header.stamp = msg.header.stamp  # Update timestamp
-
-                #             self.sky_target_pub.publish(target_bug)
-                #         except (
-                #             tf2_ros.LookupException,
-                #             tf2_ros.ExtrapolationException,
-                #             tf2_ros.ConnectivityExce                # # Mask just the target color and publish the location of the target bug:
-                # frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-                # mask = np.zeros(frame.shape[:2], dtype='uint8')
-                # detections, _, mask = self.sky_cam_vision.detect_objects(frame, self.target_color)
-                # results, final_debug_frame = self.sky_cam_vision.update_tracker(detections, frame)
-
-                # final_target = None
-                # # Assume the target closest to the end effector is the target:
-                # if len(results) > 0:
-                #     obj_id, u, v = results[0]
-
-                #     pose_cam = self._pixel_to_pose(u, v, self.sky_intrinsics, cam_height)
-
-                #     if transform_stamped:
-                #         try:
-                #             # Transform to Base Frame
-                #             pose_base = self.apply_transform(pose_cam, transform_stamped)
-
-                #             correct_pose_stamped = self._create_pose_stamped(
-                #                 pose_base, msg.header.stamp
-                #             )
-
-                #             target_bug = BugInfo()
-                #             target_bug.id = int(obj_id)
-                #             target_bug.color = self.target_color
-                #             target_bug.target = True
-                #             target_bug.pose = correct_pose_stamped
-
-                #             final_target = target_bug
-                #             final_target.pose.header.stamp = msg.header.stamp  # Update timestamp
-
-                #             self.sky_target_pub.publish(target_bug)
-                #         except (
-                #             tf2_ros.LookupException,
-                #             tf2_ros.ExtrapolationException,
-                #             tf2_ros.ConnectivityException,
-                #         ) as e:
-                #             self.get_logger().info(f'Transform  lookup failed: {e}')ption,
-                #         ) as e:
-                #             self.get_logger().info(f'Transform  lookup failed: {e}')
 
 
 def main(args=None):

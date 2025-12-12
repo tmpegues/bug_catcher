@@ -27,8 +27,7 @@ Parameters
 from bug_catcher.motionplanninginterface import MotionPlanningInterface
 from bug_catcher.planningscene import Obstacle
 
-from bug_catcher_interfaces.msg import BugArray, BugInfo, BasePoseArray
-
+from bug_catcher_interfaces.msg import BasePoseArray, BugArray
 from bug_catcher_interfaces.srv import Sort
 
 from geometry_msgs.msg import Quaternion
@@ -76,9 +75,9 @@ class SorterNode(Node):
         self.drop_sub = self.create_subscription(
             BasePoseArray, 'drop_locs', self.drop_callback, 10
         )
-        self.targ_sub = self.create_subscription(
-            BugInfo, 'bug_god/target_bug', self.target_callback, 1
-        )
+        # self.targ_sub = self.create_subscription(
+        #     BugInfo, 'bug_god/target_bug', self.target_callback, 1
+        # )
 
         # PUBLISHERS:
         markerQoS = QoSProfile(depth=10, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
@@ -187,6 +186,12 @@ class SorterNode(Node):
                 marker.lifetime.sec = 0
                 marker.lifetime.nanosec = 20000000
                 markers.append(marker)
+
+                self.current_target_color = bug.color
+                self.get_logger().info(f'Current target color is: {self.current_target_color}')
+                self.target_pose = bug.pose.pose
+                self.target_pose.position.x = bug.pose.pose.position.x + 0.015  # Centering Offset
+                self.target_pose.position.z = 0.03
             else:
                 # The bug is not a current target, just track it as a colored marker and publish.
                 # Set the location of the bug:
@@ -264,16 +269,16 @@ class SorterNode(Node):
         # Break apart the message and store the color and pose in a dictionary:
         for drop_pose in drop_msg.base_poses:
             self.drop_locs[drop_pose.color] = drop_pose.pose
-            self.drop_locs[drop_pose.color].position.z += 0.03  # TODO: Check ee actual offset
+            self.drop_locs[drop_pose.color].position.z += 0.015  # TODO: Check ee actual offset
 
-    def target_callback(self, target_msg):
-        """Update and set the current target position to catch."""
-        # Recieves a BugInfo msg:
-        self.current_target_color = target_msg.color
-        self.get_logger().info(f'Current target color is: {self.current_target_color}')
-        self.target_pose = target_msg.pose.pose
-        self.target_pose.position.x = target_msg.pose.pose.position.x + 0.015  # Centering Offset
-        self.target_pose.position.z = 0.025
+    # def target_callback(self, target_msg):
+    #     """Update and set the current target position to catch."""
+    #     # Recieves a BugInfo msg:
+    #     self.current_target_color = target_msg.color
+    #     self.get_logger().info(f'Current target color is: {self.current_target_color}')
+    #     self.target_pose = target_msg.pose.pose
+    #     self.target_pose.position.x = target_msg.pose.pose.position.x + 0.015  # Centering Offset
+    #     self.target_pose.position.z = 0.025
 
     # Will continue to sort a color until that color has been fully sorted out of the arena.
     async def sort_callback(self, request, response):
@@ -333,10 +338,11 @@ class SorterNode(Node):
             if response.success:
                 response.success = await self.mpi.GetReady()
 
-        self.get_logger.info(
+        self.get_logger().info(
             f'All {request.color} bugs are caught! \
                               Send another service to restart sorting!'
         )
+
         return response
 
 

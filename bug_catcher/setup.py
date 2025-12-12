@@ -59,6 +59,7 @@ setup(
             'turtle_sim_adjuster = bug_catcher.turtle_sim_adjuster:main',
             'turtle_pilot = bug_catcher.turtle_pilot:main',
             'sort_node = bug_catcher.bug_sort:main',
+            'stalker_node = bug_catcher.bug_stalk:main',
         ],
     },
 )

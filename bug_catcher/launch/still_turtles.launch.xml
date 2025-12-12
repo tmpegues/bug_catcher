@@ -40,15 +40,20 @@
     </node>
 
     <!--Load the Sort Node-->
-    <node pkg="bug_catcher" exec="sort_node" name="sort_node" output="screen">
+    <!-- <node pkg="bug_catcher" exec="sort_node" name="sort_node" output="screen">
+        <param name="filename" value="$(find-pkg-share bug_catcher)/config/objects.yaml"/>
+    </node> -->
+
+    <!--Load the Stalk Node-->
+    <node pkg="bug_catcher" exec="stalker_node" name="stalker_node" output="screen">
         <param name="filename" value="$(find-pkg-share bug_catcher)/config/objects.yaml"/>
     </node>
 
     <!--RQT Image Viewer-->
-    <node pkg="rqt_image_view" exec="rqt_image_view" name="wrist_camera_debug_view"
-          args="/wrist_camera/debug_view"/>
-    <node pkg="rqt_image_view" exec="rqt_image_view" name="bug_god_debug_view"
-          args="/bug_god/debug_view"/>
+    <!-- <node pkg="rqt_image_view" exec="rqt_image_view" name="wrist_camera_debug_view"
+          args="/wrist_camera/debug_view"/> -->
+    <!-- <node pkg="rqt_image_view" exec="rqt_image_view" name="bug_god_debug_view"
+          args="/bug_god/debug_view"/> -->
 
     <!-- Needed for the picking and moving of still bugs -->
     <!-- <node pkg="bug_catcher" exec="pick_node">
