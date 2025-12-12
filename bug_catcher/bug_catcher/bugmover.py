@@ -81,8 +81,8 @@ class BugMover:
             self.node.get_logger().debug('Stalking: Small')
             return await self.node.mpi.GripBug()
 
-        self.node.get_logger().debug(f'Stalking: goal {goal_pose.position.z}')
-        self.node.get_logger().debug(f'Stalking: bug {buginfo_msg.pose.pose.position.z}')
+        # self.node.get_logger().debug(f'Stalking: goal {goal_pose.position.z}')
+        # self.node.get_logger().debug(f'Stalking: bug {buginfo_msg.pose.pose.position.z}')
 
         if type(self.last_waypoints) is bool:
             start_pose = self.node.mpi.rs.get_ee_pose(frame=ee_frame)[1]
@@ -100,6 +100,7 @@ class BugMover:
             start_traj_point = None
 
         # Generate a Pose path of some number of waypoints
+        # self.node.get_logger().info(goal_pose)
         waypoints = mv.waypoint_maker(start_pose, goal_pose, steps=15)
 
         # Scale speed by distance if user_speed is True

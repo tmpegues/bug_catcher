@@ -198,7 +198,7 @@ class MotionPlanningInterface:
         # self.ps.detach_obstacle(obj_name)
         gripper = await self.mp.open_gripper()
         if not gripper:
-            self.get_logger.warn('Gripper failed at stage: open-gripper at goal')
+            self.node.get_logger().warn('Gripper failed at stage: open-gripper at goal')
             return False
         self.node.get_logger().info('gripper opened and the goal completed!')
 
