@@ -569,12 +569,12 @@ class MotionPlanner:
 
         if user_speed == 0.0:
             request.max_acceleration_scaling_factor = 0.25
-            request.max_velocity_scaling_factor = 0.45
-            request.max_cartesian_speed = 0.4
+            request.max_velocity_scaling_factor = 0.25
+            request.max_cartesian_speed = 0.1
         else:
             request.max_acceleration_scaling_factor = 0.25
             request.max_velocity_scaling_factor = user_speed
-            request.max_cartesian_speed = 0.4
+            request.max_cartesian_speed = 0.1
 
         future = self.cartesian_client.call_async(request)
         response = await future

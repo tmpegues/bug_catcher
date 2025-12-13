@@ -90,10 +90,9 @@ class BugMover:
             start_pose = self.node.mpi.rs.get_ee_pose(frame=ee_frame)[1]
 
         if type(self.last_traj) is not bool:
-            # start_traj_point = self.last_traj.points[-1]
+            # Make position and velocity continuous (jerk is not available to calculate accel)
             start_traj_point = None
-        # Start current trajectory from 2nd last waypoint
-        # that's being executed
+
         else:
             start_traj_point = None
 
