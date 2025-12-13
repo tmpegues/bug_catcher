@@ -13,6 +13,6 @@
 
     <node pkg="bug_catcher" exec="turtle_sim_adjuster"/>
 
-    <node pkg="turtlesim" exec="turtlesim_node" if="$(eval $(var demo)==True)"/>
+    <node pkg="turtlesim" exec="turtlesim_node" if="$(eval $(var turtlesim)==True)"/>
 
 </launch>
