@@ -25,9 +25,11 @@ https://github.com/user-attachments/assets/768fe2d5-4c71-45b3-9d08-a049a677f79a
 4. Here is a video of the robot performing the task in the real world!:
 
 
-https://github.com/user-attachments/assets/963e9978-1bb0-489e-bfe0-06c6158e065a
+https://github.com/user-attachments/assets/d8dd0a82-1f2d-4ce0-8cf2-a49116a189db
 
 
-5. If you would like to create and rosdoc2 API Documentation for this package:
-    Use `rosdoc2 default_config --package-path bug_catcher` 
+5. Should you want to test communication with the FER using a virtual bug, the standard ROS 2 turtlesim can be used. Use `ros2 launch bug_catcher turtle_pilot.launch.xml turtlesim:=True`. You will need to move the turtlesim turtle yourself: `ros2 run turtlesim turtle_teleop_key' is recommended. The live motion tracking is a work in progress, you will see that it's a tad jerky.
+
+6. If you would like to create and rosdoc2 API Documentation for this package:
+    Use `rosdoc2 default_config --package-path bug_catcher`
     Then open the generated html documentation in docs_output. This documentation will give you an overview of each class and Node's inputs, functions, and outputs.

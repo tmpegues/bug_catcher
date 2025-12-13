@@ -1,5 +1,6 @@
 <launch>
     <arg name="demo" default="True" description="bool: true will launch the Franka demo.launch.py. False will open rviz, but not the demo"/>
+    <arg name="turtlesim" default="False" description="bool: true will launch a turtlesim window. You will still need to move the turtle yourself"/>
 
     <include file="$(find-pkg-share franka_fer_moveit_config)/launch/demo.launch.py" if="$(eval $(var demo)==True)"/>
     <include file="$(find-pkg-share franka_fer_moveit_config)/launch/moveit_rviz.launch.py" if="$(eval $(var demo)==False)">
@@ -11,5 +12,7 @@
     </node>
 
     <node pkg="bug_catcher" exec="turtle_sim_adjuster"/>
+
+    <node pkg="turtlesim" exec="turtlesim_node" if="$(eval $(var demo)==True)"/>
 
 </launch>
